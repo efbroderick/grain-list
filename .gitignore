@@ -1,0 +1,7 @@
+.DS_Store
+.cache/
+.venv/
+.vercel/
+__pycache__/
+*.py[cod]
+data/publication_list.csv

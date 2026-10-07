@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#173c2a" />
+    <title>Grain List</title>
+    <meta
+      name="description"
+      content="Find grain growers, millers, bakers, maltsters, breweries, restaurants, and retailers near you."
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-mobile-view="map">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Grain List home">
+        <span class="brand-mark" aria-hidden="true">GL</span>
+        <span>
+          <strong>Grain List</strong>
+          <small id="dataset-summary">Loading directory...</small>
+        </span>
+      </a>
+
+      <label class="search-box" for="search-input">
+        <i data-lucide="search" aria-hidden="true"></i>
+        <input
+          id="search-input"
+          type="search"
+          autocomplete="off"
+          placeholder="Search names, places, grains..."
+        />
+        <button id="clear-search" class="icon-button search-clear" type="button" title="Clear search" hidden>
+          <i data-lucide="x" aria-hidden="true"></i>
+          <span class="sr-only">Clear search</span>
+        </button>
+      </label>
+
+      <div class="header-actions">
+        <button id="locate-button" class="button button-secondary" type="button">
+          <i data-lucide="locate-fixed" aria-hidden="true"></i>
+          <span>Near me</span>
+        </button>
+        <button id="contribute-button" class="button button-secondary" type="button" title="Suggest an update or add an organization">
+          <i data-lucide="message-square-plus" aria-hidden="true"></i>
+          <span class="desktop-submit-label">Contribute</span>
+        </button>
+        <button id="share-button" class="icon-button" type="button" title="Share this view">
+          <i data-lucide="share-2" aria-hidden="true"></i>
+          <span class="sr-only">Share this view</span>
+        </button>
+        <button id="filter-button" class="button button-primary mobile-only" type="button">
+          <i data-lucide="sliders-horizontal" aria-hidden="true"></i>
+          <span>Filters</span>
+          <span id="filter-count" class="filter-count" hidden>0</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside id="sidebar" class="sidebar" aria-label="Grain organization directory">
+        <section id="filter-panel" class="filter-panel" aria-label="Filters">
+          <div class="filter-heading mobile-only">
+            <div>
+              <span class="eyebrow">Refine results</span>
+              <h2>Filters</h2>
+            </div>
+            <button id="close-filters" class="icon-button" type="button" title="Close filters">
+              <i data-lucide="x" aria-hidden="true"></i>
+              <span class="sr-only">Close filters</span>
+            </button>
+          </div>
+
+          <button id="locate-button-mobile" class="button button-secondary mobile-only mobile-locate" type="button">
+            <i data-lucide="locate-fixed" aria-hidden="true"></i>
+            <span>Use my location</span>
+          </button>
+
+          <div class="filter-row filter-row-location">
+            <label>
+              <span>State</span>
+              <select id="state-filter">
+                <option value="">All states</option>
+              </select>
+            </label>
+            <label>
+              <span>Distance</span>
+              <select id="radius-filter" disabled>
+                <option value="">Any distance</option>
+                <option value="25">Within 25 miles</option>
+                <option value="50">Within 50 miles</option>
+                <option value="100">Within 100 miles</option>
+                <option value="250">Within 250 miles</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="filter-disclosures">
+            <details>
+              <summary>
+                <span><i data-lucide="factory" aria-hidden="true"></i> Function</span>
+                <span id="function-summary">All</span>
+              </summary>
+              <div id="function-options" class="checkbox-grid"></div>
+            </details>
+            <details>
+              <summary>
+                <span><i data-lucide="wheat" aria-hidden="true"></i> Grain</span>
+                <span id="grain-summary">All</span>
+              </summary>
+              <div id="grain-options" class="checkbox-grid"></div>
+            </details>
+          </div>
+
+          <label class="toggle-row">
+            <input id="verified-filter" type="checkbox" />
+            <span class="toggle" aria-hidden="true"></span>
+            <span>
+              <strong>Verified records only</strong>
+              <small>URL, function, grain, and source are complete</small>
+            </span>
+          </label>
+
+          <div class="filter-actions mobile-only">
+            <button id="clear-filters-mobile" class="button button-secondary" type="button">Clear all</button>
+            <button id="show-results" class="button button-primary" type="button">Show results</button>
+          </div>
+        </section>
+
+        <div id="active-filters" class="active-filters" aria-label="Active filters"></div>
+
+        <div class="results-toolbar">
+          <div>
+            <strong id="result-count">0 organizations</strong>
+            <span id="mapped-count">0 mapped</span>
+          </div>
+          <label class="sort-control">
+            <span class="sr-only">Sort results</span>
+            <select id="sort-select">
+              <option value="name">Sort: Name</option>
+              <option value="distance" disabled>Sort: Distance</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="results-list" class="results-list" aria-live="polite"></div>
+      </aside>
+
+      <section id="map-region" class="map-region" aria-label="Map of grain organizations">
+        <div id="map"></div>
+        <div class="map-actions">
+          <button id="map-area-button" class="button map-button" type="button">
+            <i data-lucide="scan" aria-hidden="true"></i>
+            <span>Search this area</span>
+          </button>
+          <button id="fit-results-button" class="icon-button map-button" type="button" title="Fit map to results">
+            <i data-lucide="maximize" aria-hidden="true"></i>
+            <span class="sr-only">Fit map to results</span>
+          </button>
+        </div>
+        <details class="map-legend">
+          <summary>Map key</summary>
+          <div class="legend-items">
+            <span><i class="legend-dot marker-grower"></i>Growers</span>
+            <span><i class="legend-dot marker-processor"></i>Processors &amp; flour</span>
+            <span><i class="legend-dot marker-bakery"></i>Baked goods</span>
+            <span><i class="legend-dot marker-brewer"></i>Malt &amp; beer</span>
+            <span><i class="legend-dot marker-menu"></i>Featured on menu</span>
+            <span><i class="legend-dot marker-other"></i>Other</span>
+          </div>
+        </details>
+        <div id="map-empty" class="map-empty" hidden>
+          <i data-lucide="map-pinned" aria-hidden="true"></i>
+          <strong>No mapped results here</strong>
+          <span>Try widening your filters or searching another area.</span>
+        </div>
+      </section>
+    </main>
+
+    <nav class="mobile-view-switcher mobile-only" aria-label="Choose map or list view">
+      <button class="view-button is-active" type="button" data-view="map">
+        <i data-lucide="map" aria-hidden="true"></i>
+        <span>Map</span>
+      </button>
+      <button class="view-button" type="button" data-view="list">
+        <i data-lucide="list" aria-hidden="true"></i>
+        <span>List</span>
+      </button>
+    </nav>
+
+    <div id="filter-overlay" class="filter-overlay mobile-only"></div>
+
+    <dialog id="detail-dialog" class="detail-dialog">
+      <div class="detail-header">
+        <div>
+          <span id="detail-category" class="eyebrow"></span>
+          <h2 id="detail-name"></h2>
+        </div>
+        <button id="close-detail" class="icon-button" type="button" title="Close details">
+          <i data-lucide="x" aria-hidden="true"></i>
+          <span class="sr-only">Close details</span>
+        </button>
+      </div>
+      <div id="detail-content" class="detail-content"></div>
+      <div class="detail-actions">
+        <button id="detail-suggest-button" class="button button-quiet" type="button">
+          <i data-lucide="message-square-plus" aria-hidden="true"></i>
+          <span>Suggest an update</span>
+        </button>
+        <button id="detail-map-button" class="button button-secondary" type="button">
+          <i data-lucide="map-pin" aria-hidden="true"></i>
+          <span>Show on map</span>
+        </button>
+        <a id="detail-website" class="button button-primary" href="#" target="_blank" rel="noopener">
+          <span>Visit website</span>
+          <i data-lucide="external-link" aria-hidden="true"></i>
+        </a>
+      </div>
+    </dialog>
+
+    <dialog id="contribute-dialog" class="detail-dialog contribute-dialog">
+      <form id="contribute-form">
+        <div class="detail-header">
+          <div>
+            <span class="eyebrow">Help improve Grain List</span>
+            <h2 id="contribute-title">Submit information</h2>
+          </div>
+          <button id="close-contribute" class="icon-button" type="button" title="Close form">
+            <i data-lucide="x" aria-hidden="true"></i>
+            <span class="sr-only">Close form</span>
+          </button>
+        </div>
+        <div class="contribute-content">
+          <p class="form-intro">Share a correction, a closure, or an organization that should be included. A source link helps us verify it.</p>
+          <div class="form-grid">
+            <label>
+              <span>Submission type</span>
+              <select id="submission-type" required>
+                <option value="Suggest a correction">Suggest a correction</option>
+                <option value="Add an organization">Add an organization</option>
+                <option value="Report a closure">Report a closure</option>
+              </select>
+            </label>
+            <label>
+              <span>Organization</span>
+              <input id="submission-organization" type="text" autocomplete="organization" required />
+            </label>
+            <label class="form-wide">
+              <span>What should change?</span>
+              <textarea id="submission-details" rows="5" required placeholder="Include the corrected or new information."></textarea>
+            </label>
+            <label class="form-wide">
+              <span>Supporting source URL</span>
+              <input id="submission-source" type="url" inputmode="url" placeholder="https://" />
+            </label>
+            <label>
+              <span>Your name <small>optional</small></span>
+              <input id="submission-name" type="text" autocomplete="name" />
+            </label>
+            <label>
+              <span>Your email <small>optional</small></span>
+              <input id="submission-email" type="email" autocomplete="email" />
+            </label>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <button id="cancel-contribute" class="button button-secondary" type="button">Cancel</button>
+          <button class="button button-primary" type="submit">
+            <i data-lucide="mail" aria-hidden="true"></i>
+            <span>Create email</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
+    <script src="./site-config.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

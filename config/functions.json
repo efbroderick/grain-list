@@ -1,0 +1,21 @@
+{
+  "allowed_functions": [
+    "Grain Featured on Menu",
+    "Grain Grower",
+    "Grain Processor",
+    "Grain User",
+    "Malted Grain",
+    "Milled Grain",
+    "Retail Baked Goods",
+    "Retail Beer",
+    "Retail Cereal",
+    "Retail Flour",
+    "Retail Pasta",
+    "Retail Whole Grains",
+    "Seed Research",
+    "Wholesale Baked Goods",
+    "Wholesale Flour",
+    "Wholesale Pasta",
+    "Wholesale Whole Grains"
+  ]
+}
