@@ -1,0 +1,9 @@
+.github/
+.venv/
+config/
+docs/
+tests/
+tools/
+Makefile
+requirements.txt
+data/publication_list.csv
