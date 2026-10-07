@@ -1,7 +1,10 @@
 const DATA_URL = "./data/organizations.json";
 const USA_VIEW = { center: [39.5, -98.35], zoom: 4 };
 const MAX_VISIBLE_RESULTS = 250;
-const CONTACT_EMAIL = window.GRAIN_LIST_CONFIG?.contactEmail?.trim() || "";
+
+function configuredContactEmail() {
+  return window.GRAIN_LIST_CONFIG?.contactEmail?.trim() || "";
+}
 
 const elements = {
   search: document.querySelector("#search-input"),
@@ -133,9 +136,9 @@ function organizationIcon(organization) {
   return L.divIcon({
     className: "",
     html: `<span class="grain-marker ${markerClass(organization)}"></span>`,
-    iconSize: [28, 38],
-    iconAnchor: [14, 36],
-    popupAnchor: [0, -34],
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14],
   });
 }
 
@@ -319,7 +322,7 @@ function renderMarkers(organizations) {
       [organization.location.lat, organization.location.lng],
       { icon: organizationIcon(organization), title: organization.name },
     );
-    marker.bindTooltip(organization.name, { direction: "top", offset: [0, -30] });
+    marker.bindTooltip(organization.name, { direction: "top", offset: [0, -14] });
     marker.on("click", () => showDetails(organization));
     markersById.set(organization.id, marker);
     markerLayer.addLayer(marker);
@@ -432,6 +435,25 @@ function detailSection(title, content, className = "") {
   return section;
 }
 
+function detailDisclosure(title, content, count) {
+  const disclosure = document.createElement("details");
+  disclosure.className = "detail-section detail-disclosure";
+  const summary = document.createElement("summary");
+  const label = document.createElement("span");
+  label.textContent = title;
+  const meta = document.createElement("span");
+  meta.className = "detail-disclosure-meta";
+  const countLabel = document.createElement("span");
+  countLabel.textContent = `${count} ${count === 1 ? "source" : "sources"}`;
+  const icon = document.createElement("i");
+  icon.dataset.lucide = "chevron-down";
+  icon.setAttribute("aria-hidden", "true");
+  meta.append(countLabel, icon);
+  summary.append(label, meta);
+  disclosure.append(summary, content);
+  return disclosure;
+}
+
 function textBlock(value) {
   const paragraph = document.createElement("p");
   paragraph.textContent = value;
@@ -495,12 +517,13 @@ function showDetails(organization) {
       link.textContent = `Source ${index + 1}: ${sourceName}`;
       sources.append(link);
     }
-    elements.detailContent.append(detailSection("Sources", sources));
+    elements.detailContent.append(detailDisclosure("Sources", sources, organization.sources.length));
   }
   elements.detailWebsite.hidden = !organization.url;
   if (organization.url) elements.detailWebsite.href = organization.url;
   elements.detailMap.hidden = !organization.location;
   elements.detail.showModal();
+  window.lucide?.createIcons();
 }
 
 function openContribution(organization = null) {
@@ -522,7 +545,8 @@ function openContribution(organization = null) {
 
 function submitContribution(event) {
   event.preventDefault();
-  if (!CONTACT_EMAIL) {
+  const contactEmail = configuredContactEmail();
+  if (!contactEmail) {
     showToast("The contact email has not been configured yet.");
     return;
   }
@@ -543,7 +567,7 @@ function submitContribution(event) {
     "",
     `Grain List page: ${window.location.href}`,
   ].join("\n");
-  window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = `mailto:${contactEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   elements.contributeDialog.close();
 }
 
