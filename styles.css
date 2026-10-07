@@ -101,11 +101,17 @@ summary:focus-visible {
   flex: 0 0 42px;
   display: grid;
   place-items: center;
-  background: var(--green);
-  color: white;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 800;
+  overflow: hidden;
+  border: 1px solid #d5ded7;
+  border-radius: 50%;
+  background: #f1f5f1;
+}
+
+.brand-mark img {
+  width: 34px;
+  height: 34px;
+  display: block;
+  object-fit: contain;
 }
 
 .brand strong,
@@ -1060,6 +1066,11 @@ summary > span:last-child {
     width: 36px;
     height: 36px;
     flex-basis: 36px;
+  }
+
+  .brand-mark img {
+    width: 29px;
+    height: 29px;
   }
 
   .brand strong {
