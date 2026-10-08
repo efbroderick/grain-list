@@ -1,7 +1,9 @@
 {
   "allowed_functions": [
+    "Grain Distiller",
     "Grain Featured on Menu",
     "Grain Grower",
+    "Grain Malter",
     "Grain Processor",
     "Grain User",
     "Malted Grain",
@@ -10,11 +12,13 @@
     "Retail Beer",
     "Retail Cereal",
     "Retail Flour",
+    "Retail Grain",
     "Retail Pasta",
     "Retail Whole Grains",
     "Seed Research",
     "Wholesale Baked Goods",
     "Wholesale Flour",
+    "Wholesale Grain",
     "Wholesale Pasta",
     "Wholesale Whole Grains"
   ]

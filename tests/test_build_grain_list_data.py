@@ -1,20 +1,45 @@
 import sys
 import unittest
+from unittest.mock import patch, Mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 from build_grain_list_data import (
     build_payload,
+    census_batch_geocode,
     normalized_address_query,
     organization_name_matches,
     parse_address,
     public_identifier,
+    reuse_formatting_match,
     state_center_result,
 )
 
 
 class BuildGrainListDataTests(unittest.TestCase):
+    def test_census_comma_separated_zip(self):
+        self.assertEqual(parse_address("1026 HICKORY ST, KANSAS CITY, MO, 64101")["state"], "MO")
+
+    def test_census_matches_are_accepted_only_in_expected_state(self):
+        response = Mock()
+        response.text = '"org-1","input","Match","Exact","1026 HICKORY ST, KANSAS CITY, MO, 64101","-94.60,39.10"\n'
+        row = {"Record ID": "org-1", "Address": "1026 Hickory Street, Kansas City, MO 64101", "State": "MO"}
+        with patch("build_grain_list_data.requests.post", return_value=response):
+            self.assertIn("org-1", census_batch_geocode([row]))
+            self.assertEqual(census_batch_geocode([{**row, "State": "KS"}]), {})
+
+    def test_reuses_only_formatting_equivalent_cache(self):
+        row = {"Address": "10 Main Street, Town, CO 80000", "State": "CO", "Name": "Mill"}
+        cache = {"address": "10 Main St, Town, CO 80000", "state": "CO", "precision": "address"}
+        self.assertTrue(reuse_formatting_match(row, cache))
+        self.assertEqual(cache["address"], row["Address"])
+        self.assertFalse(reuse_formatting_match({**row, "State": "KY"}, cache))
+        self.assertFalse(reuse_formatting_match({**row, "Address": "11 Main Street, Town, CO 80000"}, cache))
+
+    def test_query_preserves_saint_in_city_and_street_name(self):
+        self.assertIn("St. Charles Street, St. Louis", normalized_address_query("123 St. Charles St., St. Louis, MO 63101", "MO"))
+
     def test_parses_numbered_address_with_zip(self):
         result = parse_address("1875 Lawrence Street Suite 1200, Denver, CO 80202")
 
@@ -59,7 +84,7 @@ class BuildGrainListDataTests(unittest.TestCase):
 
         self.assertEqual(organization["id"], public_identifier("org-001"))
         self.assertNotEqual(organization["id"], "org-001")
-        self.assertEqual(organization["functions"], ["Retail Flour", "Grain Processor"])
+        self.assertEqual(organization["functions"], ["Grain Processor", "Retail Flour"])
         self.assertEqual(organization["grains"], ["Rye", "Hard Red Winter Wheat"])
         self.assertEqual(
             organization["location"],

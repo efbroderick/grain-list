@@ -41,6 +41,11 @@ class ValidateGrainListDataTests(unittest.TestCase):
             [],
         )
 
+    def test_rejects_unsorted_functions(self):
+        self.organization["functions"] = ["Retail Flour", "Grain Grower"]
+        issues = validate_payload(payload_with(self.organization), ALLOWED_FUNCTIONS)
+        self.assertTrue(any("not alphabetized" in issue for issue in issues))
+
     def test_rejects_internal_fields_and_ids(self):
         self.organization["id"] = "org-0001"
         self.organization["confidence"] = 0.9

@@ -52,6 +52,9 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
         for function in organization.get("functions", []):
             if function not in allowed_functions:
                 issues.append(f"{label}: unsupported function '{function}'")
+        functions = organization.get("functions", [])
+        if functions != sorted(functions, key=str.casefold):
+            issues.append(f"{label}: functions are not alphabetized")
 
         for field in ("url",):
             value = str(organization.get(field, "")).strip()

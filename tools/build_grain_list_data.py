@@ -12,6 +12,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 import requests
+from standardize_directory import standardize_address
 
 
 DEFAULT_INPUT = Path("data/publication_list.csv")
@@ -25,7 +26,7 @@ NOMINATIM_USER_AGENT = "GrainList/1.0 (contact: hello@grain-list.aleeas.com)"
 NOMINATIM_REQUEST_INTERVAL = 1.1
 ADDRESS_PATTERN = re.compile(
     r"^(?P<street>.+),\s*(?P<city>[^,]+),\s*(?P<state>[A-Z]{2})"
-    r"(?:\s+(?P<zip>\d{5})(?:-\d{4})?)?\s*$"
+    r"(?:[\s,]+(?P<zip>\d{5})(?:-\d{4})?)?\s*$"
 )
 LOCALITY_PATTERN = re.compile(
     r",\s*(?P<city>[^,]+),\s*(?P<state>[A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?\s*$"
@@ -34,15 +35,6 @@ UNIT_PATTERN = re.compile(
     r"\s+(?:suite|ste\.?|unit|building|bldg\.?)\s*[A-Z0-9-]+(?=,|$)",
     re.IGNORECASE,
 )
-STREET_ABBREVIATIONS = {
-    r"\bRd\.?\b": "Road",
-    r"\bSt\.?\b": "Street",
-    r"\bAve\.?\b": "Avenue",
-    r"\bHwy\.?\b": "Highway",
-    r"\bLn\.?\b": "Lane",
-    r"\bDr\.?\b": "Drive",
-    r"\bRte\.?\b": "Route",
-}
 STATE_NAMES = {
     "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
     "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
@@ -126,6 +118,14 @@ def cache_matches_row(row: dict, cached: dict) -> bool:
     return True
 
 
+def reuse_formatting_match(row: dict, cached: dict) -> bool:
+    previous = {**row, "Address": cached.get("address", "")}
+    if cache_matches_row(previous, cached) and standardize_address(previous["Address"]) == row.get("Address", "").strip():
+        cached.update(address=row["Address"].strip(), state=row["State"].strip(), name=row["Name"].strip())
+        return True
+    return False
+
+
 def read_cache(path: Path) -> dict:
     if not path.exists():
         return {}
@@ -195,9 +195,7 @@ def normalized_name(value: str) -> str:
 
 
 def normalized_address_query(address: str, state_code: str) -> str:
-    value = UNIT_PATTERN.sub("", (address or "").strip())
-    for pattern, replacement in STREET_ABBREVIATIONS.items():
-        value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+    value = standardize_address(UNIT_PATTERN.sub("", (address or "").strip()))
     state_name = STATE_NAMES.get(state_code, state_code)
     value = re.sub(
         rf",\s*{re.escape(state_code)}\b",
@@ -381,6 +379,8 @@ def geocode_rows(rows: list[dict], cache: dict, timeout: int) -> dict:
         address = row.get("Address", "").strip()
         cached = cache.get(record_id)
         if cached and not cache_matches_row(row, cached):
+            reuse_formatting_match(row, cached)
+        if cached and not cache_matches_row(row, cached):
             cache.pop(record_id)
             cached = None
         if cached and cache_matches_row(row, cached):
@@ -417,7 +417,7 @@ def organization_payload(row: dict, cache: dict) -> dict:
         "category": row.get("Category", ""),
         "state": row.get("State", ""),
         "city": parsed_address["city"] if parsed_address else "",
-        "functions": split_values(row.get("Function", "")),
+        "functions": sorted(split_values(row.get("Function", "")), key=str.casefold),
         "grains": split_values(row.get("Grains", "")),
         "address": row.get("Address", ""),
         "phone": row.get("Phone", ""),

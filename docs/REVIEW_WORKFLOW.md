@@ -8,6 +8,25 @@ The website is a snapshot; Sheet edits appear after a checked publication.
 
 ## Review the whole list
 
+### Standardize formatting
+
+Before review, create a cleaned copy and a cell-level change log:
+
+```bash
+python tools/standardize_directory.py --input /path/to/download.csv \
+  --output /path/to/cleaned.csv --changes /path/to/formatting-changes.csv
+```
+
+This spells out street types in numbered addresses and alphabetizes each
+Function list, without changing grain values, contacts, or sources. Saint
+names such as St. Louis are preserved. The original export is never overwritten.
+The publication vocabulary also supports the manually reviewed Grain Distiller,
+Grain Malter, Retail Grain, and Wholesale Grain labels.
+
+Use the cleaned CSV for the checks below. Formatting-only address changes reuse
+map points only when the location's state and identity still match; a real
+address or state change requires new geocoding.
+
 In Google Sheets choose File > Download > Comma-separated values (.csv) on the
 Organizations tab. In the grain-list project run:
 
