@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: setup test validate data geocode serve
+.PHONY: setup test validate data geocode serve review
 
 setup:
 	python3.12 -m venv .venv
@@ -15,12 +15,13 @@ validate:
 	$(PYTHON) tools/validate_grain_list_data.py
 
 data:
-	$(PYTHON) tools/build_grain_list_data.py
-	$(PYTHON) tools/validate_grain_list_data.py
+	$(PYTHON) tools/maintain_directory.py --input data/publication_list.csv
 
 geocode:
-	$(PYTHON) tools/build_grain_list_data.py --geocode
-	$(PYTHON) tools/validate_grain_list_data.py
+	$(PYTHON) tools/maintain_directory.py --input data/publication_list.csv --geocode
 
 serve:
 	$(PYTHON) -m http.server 4173
+
+review:
+	$(PYTHON) tools/maintain_directory.py --input "$(INPUT)"

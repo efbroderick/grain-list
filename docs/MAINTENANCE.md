@@ -4,6 +4,10 @@ Grain List is intentionally separate from the private research system. It
 accepts an approved publication CSV, generates browser-safe JSON, validates the
 result, and deploys only the public website and public data.
 
+Use [the full-list review workflow](REVIEW_WORKFLOW.md) for routine maintenance.
+It produces searchable reports, field-by-field changes, and publication
+snapshots. The commands below prepare a review without replacing public data.
+
 ## Update the directory
 
 1. Export the approved public list as `data/publication_list.csv`. The file must
@@ -13,9 +17,12 @@ result, and deploys only the public website and public data.
    Census batch geocoder, then resolves misses one at a time with the free
    OpenStreetMap Nominatim service. Results are cached. Records that still
    cannot be located receive a clearly labeled state-level point so every
-   published organization remains visible on the map.
-3. Run `make test` and `make validate`.
-4. Preview with `make serve` on desktop and mobile before deployment.
+   published organization remains visible on the map. This prepares a report;
+   it does not update data/organizations.json.
+3. Open `.maintenance/latest/review.html`, resolve errors, and review warnings
+   and all additions/removals/changes. Follow REVIEW_WORKFLOW.md to prepare a
+   checked publication with `--publish` after running `make test`.
+4. Run `make validate`, then preview with `make serve` before deployment.
 5. Commit only the generated `data/organizations.json`, never the private CSV
    or `.cache/` geocoding records.
 

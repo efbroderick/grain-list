@@ -114,6 +114,18 @@ def parse_address(address: str) -> dict | None:
     }
 
 
+def cache_matches_row(row: dict, cached: dict) -> bool:
+    if not cached or cached.get("address", "") != row.get("Address", "").strip():
+        return False
+    parsed = parse_address(cached.get("address", ""))
+    cached_state = cached.get("state") or (parsed or {}).get("state")
+    if cached_state != row.get("State", "").strip():
+        return False
+    if cached.get("precision") == "organization" and cached.get("name") != row.get("Name", "").strip():
+        return False
+    return True
+
+
 def read_cache(path: Path) -> dict:
     if not path.exists():
         return {}
@@ -126,6 +138,7 @@ def write_cache(path: Path, cache: dict) -> None:
 
 
 def census_batch_geocode(rows: list[dict], timeout: int = 120) -> dict[str, dict]:
+    by_id = {row["Record ID"]: row for row in rows}
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer)
     for row in rows:
@@ -155,6 +168,9 @@ def census_batch_geocode(rows: list[dict], timeout: int = 120) -> dict[str, dict
     results = {}
     for result in csv.reader(io.StringIO(response.text)):
         if len(result) < 6 or result[2].strip().casefold() != "match":
+            continue
+        matched = parse_address(result[4].strip())
+        if result[0] not in by_id or not matched or matched["state"] != by_id[result[0]].get("State"):
             continue
         coordinates = result[5].split(",")
         if len(coordinates) != 2:
@@ -349,6 +365,8 @@ def nominatim_geocode_rows(
             result = state_center_result(state_code)
         cache[record_id] = {
             "address": address,
+            "state": state_code,
+            "name": row.get("Name", "").strip(),
             **(result or {"unmatched": True}),
         }
         if index % 25 == 0 or index == len(remaining):
@@ -362,10 +380,11 @@ def geocode_rows(rows: list[dict], cache: dict, timeout: int) -> dict:
         record_id = row["Record ID"]
         address = row.get("Address", "").strip()
         cached = cache.get(record_id)
-        if cached and cached.get("address") != address:
+        if cached and not cache_matches_row(row, cached):
             cache.pop(record_id)
             cached = None
-        if cached and cached.get("address") == address:
+        if cached and cache_matches_row(row, cached):
+            cached.update({"state": row.get("State", "").strip(), "name": row.get("Name", "").strip()})
             continue
         if parse_address(address):
             candidates.append(row)
@@ -377,7 +396,7 @@ def geocode_rows(rows: list[dict], cache: dict, timeout: int) -> dict:
             record_id = row["Record ID"]
             address = row.get("Address", "").strip()
             result = results.get(record_id)
-            cache[record_id] = {"address": address, **(result or {"unmatched": True})}
+            cache[record_id] = {"address": address, "state": row.get("State", "").strip(), "name": row.get("Name", "").strip(), **(result or {"unmatched": True})}
     return nominatim_geocode_rows(rows, cache, timeout=timeout)
 
 
@@ -386,7 +405,7 @@ def organization_payload(row: dict, cache: dict) -> dict:
     location = cache.get(record_id, {})
     parsed_address = parse_address(row.get("Address", ""))
     coordinates = None
-    if "latitude" in location and "longitude" in location:
+    if cache_matches_row(row, location) and "latitude" in location and "longitude" in location:
         coordinates = {
             "lat": location["latitude"],
             "lng": location["longitude"],

@@ -1,7 +1,10 @@
 .DS_Store
 .cache/
+.maintenance/
 .venv/
 .vercel/
 __pycache__/
 *.py[cod]
 data/publication_list.csv
+credentials/
+*service-account*.json

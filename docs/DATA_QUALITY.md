@@ -22,6 +22,15 @@ reliable source was found; it is not an estimate.
 - Confidence scores, notes, review history, and private source files are never
   published.
 - Only controlled Function values are accepted.
-- Organizations without reliable coordinates remain searchable without an
-  estimated map pin.
+- Every published organization appears on the map. Approximate city/region and
+  state placements are labeled and require documented review in the maintenance
+  workflow. State points are excluded from distance results.
 - Every release passes automated tests and public-data validation.
+
+## Completeness and Factual Review
+
+File validation is not factual review. Valid addresses, working URLs, and
+controlled Functions can still be wrong. Use the whole-list maintenance report
+to review gaps, location precision, duplicates, sources, and every public change.
+Verified records must have sources. Acceptable blanks need a reviewed reason.
+See [the review workflow](REVIEW_WORKFLOW.md) for downloads and publication gates.
