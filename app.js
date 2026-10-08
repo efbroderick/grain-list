@@ -120,6 +120,18 @@ function distanceMiles(first, second) {
   return earthRadiusMiles * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function hasDistancePrecision(organization) {
+  return organization.location && organization.location.precision !== "state";
+}
+
+function locationNote(organization) {
+  const precision = organization.location?.precision;
+  if (precision === "state") return "Approximate map location (state only)";
+  if (precision === "place") return "Approximate map location (city or region)";
+  if (precision === "organization") return "Approximate map location (organization match)";
+  return "";
+}
+
 function markerClass(organization) {
   const functions = organization.functions.join(" ").toLocaleLowerCase();
   if (functions.includes("grower")) return "marker-grower";
@@ -287,7 +299,7 @@ function filteredOrganizations() {
     if (!matchesSelection(organization.grains, state.grains)) return false;
     if (state.verifiedOnly && organization.status !== "Verified") return false;
     if (radius) {
-      if (!organization.location) return false;
+      if (!hasDistancePrecision(organization)) return false;
       if (distanceMiles(state.userLocation, organization.location) > radius) return false;
     }
     if (bounds) {
@@ -298,7 +310,7 @@ function filteredOrganizations() {
   });
 
   for (const organization of results) {
-    organization.distance = state.userLocation && organization.location
+    organization.distance = state.userLocation && hasDistancePrecision(organization)
       ? distanceMiles(state.userLocation, organization.location)
       : null;
   }
@@ -322,7 +334,10 @@ function renderMarkers(organizations) {
       [organization.location.lat, organization.location.lng],
       { icon: organizationIcon(organization), title: organization.name },
     );
-    marker.bindTooltip(organization.name, { direction: "top", offset: [0, -14] });
+    const tooltip = locationNote(organization)
+      ? `${organization.name} · approximate location`
+      : organization.name;
+    marker.bindTooltip(tooltip, { direction: "top", offset: [0, -14] });
     marker.on("click", () => showDetails(organization));
     markersById.set(organization.id, marker);
     markerLayer.addLayer(marker);
@@ -334,7 +349,7 @@ function resultItem(organization) {
   const button = document.createElement("button");
   button.className = "result-item";
   button.type = "button";
-  const locationText = organization.address || `${organization.state} · Location not mapped`;
+  const locationText = organization.address || `${organization.state} · Approximate location`;
   const distance = organization.distance == null ? "" : `${organization.distance.toFixed(organization.distance < 10 ? 1 : 0)} mi`;
   const functionText = organization.functions.length
     ? organization.functions.slice(0, 2).join(" · ")
@@ -482,6 +497,12 @@ function showDetails(organization) {
   }
   if (organization.grains.length) {
     elements.detailContent.append(detailSection("Grains", tags(organization.grains, "grain")));
+  }
+  const mapNote = locationNote(organization);
+  if (mapNote) {
+    const note = textBlock(mapNote);
+    note.className = "location-note";
+    elements.detailContent.append(detailSection("Map location", note));
   }
   const contact = document.createElement("div");
   contact.className = "contact-list";

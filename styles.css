@@ -912,6 +912,13 @@ summary > span:last-child {
   gap: 8px;
 }
 
+.location-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .contact-list a,
 .source-link {
   color: var(--blue);

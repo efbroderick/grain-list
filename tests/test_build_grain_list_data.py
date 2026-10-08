@@ -4,7 +4,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
-from build_grain_list_data import build_payload, parse_address, public_identifier
+from build_grain_list_data import (
+    build_payload,
+    normalized_address_query,
+    organization_name_matches,
+    parse_address,
+    public_identifier,
+    state_center_result,
+)
 
 
 class BuildGrainListDataTests(unittest.TestCase):
@@ -43,6 +50,7 @@ class BuildGrainListDataTests(unittest.TestCase):
                 "address": rows[0]["Address"],
                 "latitude": 39.74,
                 "longitude": -104.99,
+                "precision": "address",
             }
         }
 
@@ -53,9 +61,35 @@ class BuildGrainListDataTests(unittest.TestCase):
         self.assertNotEqual(organization["id"], "org-001")
         self.assertEqual(organization["functions"], ["Retail Flour", "Grain Processor"])
         self.assertEqual(organization["grains"], ["Rye", "Hard Red Winter Wheat"])
-        self.assertEqual(organization["location"], {"lat": 39.74, "lng": -104.99})
+        self.assertEqual(
+            organization["location"],
+            {"lat": 39.74, "lng": -104.99, "precision": "address"},
+        )
         self.assertNotIn("Confidence", organization)
         self.assertNotIn("Notes", organization)
+
+    def test_accepts_a_close_organization_name_match(self):
+        result = {"display_name": "Barton Springs Mill, Dripping Springs, Texas"}
+
+        self.assertTrue(organization_name_matches("Barton Springs Mill", result))
+        self.assertFalse(organization_name_matches("Different Bakery", result))
+
+    def test_state_center_fallback_is_marked_approximate(self):
+        result = state_center_result("CO")
+
+        self.assertEqual(result["precision"], "state")
+        self.assertIn("approximate", result["matched_address"])
+
+    def test_normalizes_an_address_for_openstreetmap(self):
+        query = normalized_address_query(
+            "16604 Fitzhugh Rd Unit B, Dripping Springs, TX 78620",
+            "TX",
+        )
+
+        self.assertEqual(
+            query,
+            "16604 Fitzhugh Road, Dripping Springs, Texas 78620, USA",
+        )
 
 
 if __name__ == "__main__":

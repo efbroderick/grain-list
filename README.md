@@ -6,6 +6,10 @@ research organizations. Visitors can search by name or location, filter by
 Function and Grain, browse nearby organizations, and submit corrections or new
 listings through their own email client.
 
+Every published organization appears on the map. When an exact address cannot
+be verified, the interface identifies the point as an approximate city, region,
+organization, or state location rather than presenting it as street-level data.
+
 ## Run locally
 
 ```bash

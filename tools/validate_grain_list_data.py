@@ -19,6 +19,7 @@ PLACEHOLDER_EMAIL = re.compile(
     r"(?:example\.com|email@|yourname@|name@domain|test@)",
     re.IGNORECASE,
 )
+LOCATION_PRECISIONS = {"address", "organization", "place", "state"}
 
 
 def valid_web_url(value: str) -> bool:
@@ -65,7 +66,9 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
             issues.append(f"{label}: invalid or placeholder email '{email}'")
 
         location = organization.get("location")
-        if location is not None:
+        if location is None:
+            issues.append(f"{label}: location is missing")
+        else:
             try:
                 latitude = float(location["lat"])
                 longitude = float(location["lng"])
@@ -74,6 +77,9 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
             else:
                 if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
                     issues.append(f"{label}: location is outside valid coordinate bounds")
+            precision = location.get("precision")
+            if precision not in LOCATION_PRECISIONS:
+                issues.append(f"{label}: invalid location precision '{precision}'")
 
     summary = payload.get("summary", {})
     mapped = sum(bool(row.get("location")) for row in organizations)
