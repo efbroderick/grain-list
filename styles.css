@@ -826,6 +826,55 @@ summary > span:last-child {
   padding: 18px 20px;
 }
 
+.install-dialog {
+  width: min(460px, calc(100% - 28px));
+}
+
+.install-dialog .detail-header h2 {
+  font-size: 21px;
+}
+
+.install-content {
+  padding: 20px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.install-app {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.install-app img {
+  flex: 0 0 64px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.install-app strong,
+.install-app span {
+  display: block;
+}
+
+.install-app span,
+.install-content small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.install-content ol {
+  padding-left: 23px;
+}
+
+.install-content li + li {
+  margin-top: 12px;
+}
+
+#install-status:empty {
+  display: none;
+}
+
 .detail-section + .detail-section {
   margin-top: 18px;
 }
@@ -1088,6 +1137,10 @@ summary > span:last-child {
     max-width: 180px;
   }
 
+  .brand > span:last-child {
+    min-width: 0;
+  }
+
   .search-box {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -1318,6 +1371,24 @@ summary > span:last-child {
 
   .form-wide {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 380px) {
+  #filter-button {
+    position: relative;
+    width: 40px;
+    padding: 0;
+  }
+
+  #filter-button > span:not(.filter-count) {
+    display: none;
+  }
+
+  #filter-button .filter-count {
+    position: absolute;
+    top: -4px;
+    right: -4px;
   }
 }
 

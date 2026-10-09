@@ -4,9 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#173c2a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Grain List" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <title>Grain List</title>
     <link rel="icon" type="image/png" sizes="64x64" href="./assets/favicon.png?v=20261007-2" />
-    <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png?v=20261007-2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/app-icon-180.png" />
     <meta
       name="description"
       content="Find grain growers, millers, bakers, maltsters, breweries, restaurants, and retailers near you."
@@ -24,7 +27,7 @@
       rel="stylesheet"
       href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
     />
-    <link rel="stylesheet" href="./styles.css?v=20261007-2" />
+    <link rel="stylesheet" href="./styles.css?v=20261008-install" />
   </head>
   <body data-mobile-view="map">
     <header class="topbar">
@@ -53,6 +56,9 @@
       </label>
 
       <div class="header-actions">
+        <button id="install-button" class="icon-button" type="button" title="Add to Home Screen" aria-label="Add to Home Screen" hidden>
+          <i data-lucide="smartphone" aria-hidden="true"></i>
+        </button>
         <button id="locate-button" class="button button-secondary" type="button">
           <i data-lucide="locate-fixed" aria-hidden="true"></i>
           <span>Near me</span>
@@ -65,7 +71,7 @@
           <i data-lucide="share-2" aria-hidden="true"></i>
           <span class="sr-only">Share this view</span>
         </button>
-        <button id="filter-button" class="button button-primary mobile-only" type="button">
+        <button id="filter-button" class="button button-primary mobile-only" type="button" aria-label="Filters" title="Filters">
           <i data-lucide="sliders-horizontal" aria-hidden="true"></i>
           <span>Filters</span>
           <span id="filter-count" class="filter-count" hidden>0</span>
@@ -289,7 +295,37 @@
       </form>
     </dialog>
 
+    <dialog id="install-dialog" class="detail-dialog install-dialog" aria-labelledby="install-title" aria-describedby="install-intro">
+      <div class="detail-header">
+        <div>
+          <span class="eyebrow">Grain List</span>
+          <h2 id="install-title">Add to Home Screen</h2>
+        </div>
+        <button id="close-install" class="icon-button" type="button" title="Close installation instructions" aria-label="Close installation instructions">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="install-content">
+        <div class="install-app">
+          <img src="./assets/app-icon-192.png" width="64" height="64" alt="Grain List wheat icon" />
+          <div><strong>Grain List</strong><span>Grain organizations near you</span></div>
+        </div>
+        <p id="install-intro"></p>
+        <ol id="install-steps"></ol>
+        <p id="install-status" role="status" aria-live="polite"></p>
+        <small>Internet connection required.</small>
+      </div>
+      <div class="detail-actions">
+        <button id="dismiss-install" class="button button-secondary" type="button">Done</button>
+        <button id="native-install" class="button button-primary" type="button" hidden>
+          <i data-lucide="download" aria-hidden="true"></i>
+          <span>Install Grain List</span>
+        </button>
+      </div>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./install.js?v=20261008" defer></script>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
