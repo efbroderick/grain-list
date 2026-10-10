@@ -11,7 +11,7 @@ test:
 	$(PYTHON) -m unittest discover -s tests
 	node --check app.js
 	node --check install.js
-	node --test tests/test_install.cjs
+	node --test tests/*.cjs
 
 validate:
 	$(PYTHON) tools/validate_grain_list_data.py

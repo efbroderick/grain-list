@@ -662,7 +662,7 @@ function closeFilters() {
 function bindEvents() {
   let searchTimer;
   elements.search.addEventListener("input", (event) => {
-    state.query = event.target.value.trim();
+    state.query = event.target.value;
     elements.clearSearch.hidden = !state.query;
     window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(render, 120);
