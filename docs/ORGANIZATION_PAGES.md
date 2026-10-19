@@ -17,7 +17,9 @@ not deployed. `dist/` is generated and ignored by Git.
 
 Vercel runs this build automatically on every deployment. A normal reviewed
 data refresh therefore regenerates all profile pages without another manual
-step. Removed listings do not leave stale pages behind. Do not add a catch-all
+step. Dataset requests and the app entry script include a content-hash version,
+so browser/CDN caches cannot retain an earlier release's taxonomy or contacts.
+Removed listings do not leave stale pages behind. Do not add a catch-all
 rewrite to index.html: unknown profile URLs must return HTTP 404.
 
 The default canonical origin is https://grain-list.vercel.app. Set the

@@ -75,7 +75,7 @@
   const id = params.get("organization");
   if (id && /^grain-[a-f0-9]{16}$/.test(id)) {
     // A reader may start typing while the request is in flight; never replace their edits.
-    fetch("/data/organizations.json").then(response => {
+    fetch("/data/organizations.json?version=__DATA_VERSION__").then(response => {
       if (!response.ok) throw new Error("Directory unavailable");
       return response.json();
     }).then(payload => {

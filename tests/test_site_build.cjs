@@ -33,6 +33,13 @@ test("every public organization has an HTML page and a crawlable directory/sitem
     assert.equal(fs.existsSync(path.join(output, "tools")), false);
     assert.equal(fs.existsSync(path.join(output, "config")), false);
     const mapHtml = fs.readFileSync(path.join(output, "index.html"), "utf8");
+    const version = require("node:crypto").createHash("sha256").update(fs.readFileSync(path.join(root, "data/organizations.json"))).digest("hex").slice(0, 16);
+    for (const file of ["app.js", "submission.js"]) {
+      const script = fs.readFileSync(path.join(output, file), "utf8");
+      assert.ok(script.includes(`/data/organizations.json?version=${version}`));
+      assert.equal(script.includes("__DATA_VERSION__"), false);
+    }
+    assert.ok(mapHtml.includes(`app.js?v=20261019-data-${version}`));
     assert.equal(mapHtml.includes("atlas.css"), false);
     assert.equal(mapHtml.includes('id="verified-filter"'), false);
     assert.ok(mapHtml.includes('id="distance-field" hidden'));

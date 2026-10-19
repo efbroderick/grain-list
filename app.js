@@ -1,4 +1,4 @@
-const DATA_URL = "/data/organizations.json";
+const DATA_URL = "/data/organizations.json?version=__DATA_VERSION__";
 const USA_VIEW = { center: [39.5, -98.35], zoom: 4 };
 const MAX_VISIBLE_RESULTS = 250;
 

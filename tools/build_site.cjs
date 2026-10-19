@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { createHash } = require("node:crypto");
 
 const ROOT = path.resolve(__dirname, "..");
 const DEFAULT_ORIGIN = "https://grain-list.vercel.app";
@@ -111,7 +112,7 @@ function contribution(functions, origin) {
 </div><div class="submission-footer"><p>Suggestions are reviewed before publication. This creates a draft in your email app; you must send it to complete your suggestion.</p><div class="submission-actions"><button class="button button-primary" type="submit">${icon("mail")}Create email draft</button><button class="button button-secondary" id="copy-submission" type="button">${icon("copy")}Copy suggestion</button></div></div></form>
 <section class="delivery-status" id="delivery-status" hidden aria-live="polite"><h2 id="delivery-heading"></h2><p id="delivery-message"></p><a id="delivery-email"></a><textarea id="delivery-draft" rows="10" readonly aria-label="Suggestion email text"></textarea></section>
 <p class="page-status" id="page-status" role="status"></p><noscript><p>JavaScript is needed to prepare the email draft. You can send additions and corrections to <a href="mailto:hello@grain-list.aleeas.com">hello@grain-list.aleeas.com</a>.</p></noscript></main>`;
-  return page({ title: "Add an Organization | Grain List", description: "Suggest a farm growing grain, a business using local grain, or a correction to an existing Grain List organization.", route: "/add/", content, origin, script: '<script src="/submission.js?v=20261016" defer></script>', noindex: true });
+  return page({ title: "Add an Organization | Grain List", description: "Suggest a farm growing grain, a business using local grain, or a correction to an existing Grain List organization.", route: "/add/", content, origin, script: '<script src="/submission.js?v=20261019-__DATA_VERSION__" defer></script>', noindex: true });
 }
 function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEFAULT_ORIGIN } = {}) {
   root = path.resolve(root);
@@ -119,7 +120,9 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   if (output === root || root.startsWith(output + path.sep)) throw new Error("Build output cannot replace the source directory");
   const url = new URL(origin);
   if (!["https:", "http:"].includes(url.protocol) || url.pathname !== "/" || url.search || url.hash) throw new Error("Site origin must be an HTTP(S) origin without a path");
-  const payload = JSON.parse(fs.readFileSync(path.join(root, "data/organizations.json"), "utf8"));
+  const dataText = fs.readFileSync(path.join(root, "data/organizations.json"), "utf8");
+  const payload = JSON.parse(dataText);
+  const dataVersion = createHash("sha256").update(dataText).digest("hex").slice(0, 16);
   const seen = new Set();
   for (const o of payload.organizations) {
     if (!/^grain-[a-f0-9]{16}$/.test(o.id) || seen.has(o.id)) throw new Error("Invalid or duplicate public organization ID");
@@ -132,9 +135,10 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   const temporary = `${output}.tmp`;
   fs.rmSync(temporary, { recursive: true, force: true });
   fs.mkdirSync(temporary, { recursive: true });
-  const mapTemplate = fs.readFileSync(path.join(root, "index.html"), "utf8").replaceAll(DEFAULT_ORIGIN, url.origin);
+  const mapTemplate = fs.readFileSync(path.join(root, "index.html"), "utf8").replaceAll(DEFAULT_ORIGIN, url.origin).replaceAll("__DATA_VERSION__", dataVersion);
   for (const file of ["index.html", "app.js", "styles.css", "pages.css", "page.js", "submission.js", "install.js", "manifest.webmanifest", "site-config.js"]) {
-    if (file === "index.html") fs.writeFileSync(path.join(temporary, file), fs.readFileSync(path.join(root, file), "utf8").replaceAll(DEFAULT_ORIGIN, url.origin));
+    if (file === "index.html") fs.writeFileSync(path.join(temporary, file), mapTemplate);
+    else if (["app.js", "submission.js"].includes(file)) fs.writeFileSync(path.join(temporary, file), fs.readFileSync(path.join(root, file), "utf8").replaceAll("__DATA_VERSION__", dataVersion));
     else fs.copyFileSync(path.join(root, file), path.join(temporary, file));
   }
   fs.cpSync(path.join(root, "assets"), path.join(temporary, "assets"), { recursive: true });
@@ -143,7 +147,7 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   function write(route, html) {
     const destination = path.join(temporary, route, "index.html");
     fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.writeFileSync(destination, html);
+    fs.writeFileSync(destination, html.replaceAll("__DATA_VERSION__", dataVersion));
   }
   for (const o of payload.organizations) write(organizationPath(o), profile(o, origin, mapTemplate));
   write("/organizations/", directory(payload.organizations, origin));
