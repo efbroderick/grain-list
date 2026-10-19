@@ -1,9 +1,14 @@
 .github/
 .venv/
-config/
 docs/
 tests/
-tools/
 Makefile
 requirements.txt
 data/publication_list.csv
+dist/
+dist.tmp/
+.cache/
+.maintenance/
+credentials/
+.env*
+requirements-maintenance.txt

@@ -1,6 +1,6 @@
 PYTHON ?= .venv/bin/python
 
-.PHONY: setup test validate data geocode serve review
+.PHONY: setup test validate data geocode serve review build
 
 setup:
 	python3.12 -m venv .venv
@@ -11,6 +11,8 @@ test:
 	$(PYTHON) -m unittest discover -s tests
 	node --check app.js
 	node --check install.js
+	node --check page.js
+	node --check submission.js
 	node --test tests/*.cjs
 
 validate:
@@ -22,8 +24,11 @@ data:
 geocode:
 	$(PYTHON) tools/maintain_directory.py --input data/publication_list.csv --geocode
 
-serve:
-	$(PYTHON) -m http.server 4173
+build:
+	node tools/build_site.cjs
+
+serve: build
+	$(PYTHON) -m http.server 4173 --directory dist
 
 review:
 	$(PYTHON) tools/maintain_directory.py --input "$(INPUT)"

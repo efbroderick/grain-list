@@ -22,7 +22,7 @@ snapshots. The commands below prepare a review without replacing public data.
 3. Open `.maintenance/latest/review.html`, resolve errors, and review warnings
    and all additions/removals/changes. Follow REVIEW_WORKFLOW.md to prepare a
    checked publication with `--publish` after running `make test`.
-4. Run `make validate`, then preview with `make serve` before deployment.
+4. Run `make validate build`, then preview with `make serve` before deployment.
 5. Commit only the generated `data/organizations.json`, never the private CSV
    or `.cache/` geocoding records.
 
@@ -37,21 +37,26 @@ policy. Never remove the cache between routine updates.
 
 ## Handle public submissions
 
-The site offers “Contribute” and “Suggest an update” actions. They create a
+The site offers “Add organization” and “Suggest an update” actions. They create a
 prefilled email and do not write directly to the published dataset. Review each
 submission against the normal evidence rules, update the private master list,
 then publish a fresh approved export through the steps above.
 
 ## Deploy to Vercel
 
-The repository root is the Vercel project root; there is no build step. Before
+The repository root is the Vercel project root. Vercel runs
+`node tools/build_site.cjs` and serves `dist/`. Before
 production deployment:
 
 ```bash
 make test
 make validate
+make build
 ```
 
 Then deploy with Vercel or connect the standalone GitHub repository to Vercel.
 `vercel.json` supplies cache and security headers. The contact email is stored
 in `site-config.js`; changing it requires a normal redeployment.
+
+See ORGANIZATION_PAGES.md for permanent profile URLs, indexing, the sitemap,
+public suggestion handling, and the terrain/light basemap behavior.

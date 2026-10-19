@@ -15,5 +15,8 @@ jobs:
       - run: python -m unittest discover -s tests
       - run: node --check app.js
       - run: node --check install.js
+      - run: node --check page.js
+      - run: node --check submission.js
       - run: node --test tests/*.cjs
       - run: python tools/validate_grain_list_data.py
+      - run: node tools/build_site.cjs

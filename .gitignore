@@ -8,3 +8,5 @@ __pycache__/
 data/publication_list.csv
 credentials/
 *service-account*.json
+dist/
+dist.tmp/

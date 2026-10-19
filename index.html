@@ -8,6 +8,10 @@
     <meta name="apple-mobile-web-app-title" content="Grain List" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>Grain List</title>
+    <link rel="canonical" href="https://grain-list.vercel.app/" />
+    <meta property="og:title" content="Grain List" />
+    <meta property="og:description" content="Find grain growers, millers, bakers, and other grain organizations near you." />
+    <meta property="og:url" content="https://grain-list.vercel.app/" />
     <link rel="icon" type="image/png" sizes="64x64" href="./assets/favicon.png?v=20261007-2" />
     <link rel="apple-touch-icon" sizes="180x180" href="./assets/app-icon-180.png" />
     <meta
@@ -28,6 +32,7 @@
       href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
     />
     <link rel="stylesheet" href="./styles.css?v=20261009-cards" />
+    <link rel="stylesheet" href="./atlas.css?v=20261019" />
   </head>
   <body data-mobile-view="map">
     <header class="topbar">
@@ -63,10 +68,13 @@
           <i data-lucide="locate-fixed" aria-hidden="true"></i>
           <span>Near me</span>
         </button>
-        <button id="contribute-button" class="button button-secondary" type="button" title="Suggest an update or add an organization">
-          <i data-lucide="message-square-plus" aria-hidden="true"></i>
-          <span class="desktop-submit-label">Contribute</span>
-        </button>
+        <a id="contribute-button" class="button button-secondary" href="/add/" title="Add an organization" aria-label="Add an organization">
+          <i data-lucide="plus" aria-hidden="true"></i>
+          <span class="desktop-submit-label">Add organization</span>
+        </a>
+        <a class="icon-button directory-link" href="/organizations/" title="Browse organization pages" aria-label="Browse organization pages">
+          <i data-lucide="list" aria-hidden="true"></i>
+        </a>
         <button id="share-button" class="icon-button" type="button" title="Share this view">
           <i data-lucide="share-2" aria-hidden="true"></i>
           <span class="sr-only">Share this view</span>
@@ -212,88 +220,7 @@
 
     <div id="filter-overlay" class="filter-overlay mobile-only"></div>
 
-    <dialog id="detail-dialog" class="detail-dialog">
-      <div class="detail-header">
-        <div>
-          <span id="detail-category" class="eyebrow"></span>
-          <h2 id="detail-name"></h2>
-        </div>
-        <button id="close-detail" class="icon-button" type="button" title="Close details">
-          <i data-lucide="x" aria-hidden="true"></i>
-          <span class="sr-only">Close details</span>
-        </button>
-      </div>
-      <div id="detail-content" class="detail-content"></div>
-      <div class="detail-actions">
-        <button id="detail-suggest-button" class="button button-quiet" type="button" aria-label="Suggest an update" title="Suggest an update">
-          <i data-lucide="message-square-plus" aria-hidden="true"></i>
-          <span>Suggest update</span>
-        </button>
-        <button id="detail-map-button" class="button button-secondary" type="button">
-          <i data-lucide="map-pin" aria-hidden="true"></i>
-          <span>Show on map</span>
-        </button>
-        <a id="detail-website" class="button button-primary" href="#" target="_blank" rel="noopener">
-          <span>Visit website</span>
-          <i data-lucide="external-link" aria-hidden="true"></i>
-        </a>
-      </div>
-    </dialog>
-
-    <dialog id="contribute-dialog" class="detail-dialog contribute-dialog">
-      <form id="contribute-form">
-        <div class="detail-header">
-          <div>
-            <span class="eyebrow">Help improve Grain List</span>
-            <h2 id="contribute-title">Submit information</h2>
-          </div>
-          <button id="close-contribute" class="icon-button" type="button" title="Close form">
-            <i data-lucide="x" aria-hidden="true"></i>
-            <span class="sr-only">Close form</span>
-          </button>
-        </div>
-        <div class="contribute-content">
-          <p class="form-intro">Share a correction, a closure, or an organization that should be included. A source link helps us verify it. This opens a pre-filled draft in your email app; review it and select Send.</p>
-          <div class="form-grid">
-            <label>
-              <span>Submission type</span>
-              <select id="submission-type" required>
-                <option value="Suggest a correction">Suggest a correction</option>
-                <option value="Add an organization">Add an organization</option>
-                <option value="Report a closure">Report a closure</option>
-              </select>
-            </label>
-            <label>
-              <span>Organization</span>
-              <input id="submission-organization" type="text" autocomplete="organization" required />
-            </label>
-            <label class="form-wide">
-              <span>What should change?</span>
-              <textarea id="submission-details" rows="5" required placeholder="Include the corrected or new information."></textarea>
-            </label>
-            <label class="form-wide">
-              <span>Supporting source URL</span>
-              <input id="submission-source" type="url" inputmode="url" placeholder="https://" />
-            </label>
-            <label>
-              <span>Your name <small>optional</small></span>
-              <input id="submission-name" type="text" autocomplete="name" />
-            </label>
-            <label>
-              <span>Your email <small>optional</small></span>
-              <input id="submission-email" type="email" autocomplete="email" />
-            </label>
-          </div>
-        </div>
-        <div class="detail-actions">
-          <button id="cancel-contribute" class="button button-secondary" type="button">Cancel</button>
-          <button class="button button-primary" type="submit">
-            <i data-lucide="mail" aria-hidden="true"></i>
-            <span>Open email draft</span>
-          </button>
-        </div>
-      </form>
-    </dialog>
+    <noscript><p><a href="/organizations/">Browse the organization directory</a> or <a href="/add/">suggest an organization</a>.</p></noscript>
 
     <dialog id="install-dialog" class="detail-dialog install-dialog" aria-labelledby="install-title" aria-describedby="install-intro">
       <div class="detail-header">
@@ -331,6 +258,6 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
     <script src="./site-config.js?v=20261007"></script>
-    <script type="module" src="./app.js?v=20261009-search"></script>
+    <script type="module" src="./app.js?v=20261019"></script>
   </body>
 </html>

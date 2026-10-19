@@ -1,0 +1,55 @@
+:root { --line: #e0e5e3; --surface-soft: #f6f8f7; --ink: #202e2b; --muted: #65746e; --green: #235447; --green-2: #326c59; --blue: #496998; --rust: #a65a45; }
+body { background: white; }
+.topbar { height: 82px; padding: 16px 24px; gap: 24px; grid-template-columns: minmax(200px, 260px) minmax(250px, 620px) auto; }
+.brand strong { font-family: Georgia, "Times New Roman", serif; font-size: 25px; font-weight: 600; }
+.brand small { font-size: 11px; margin-top: 6px; }
+.brand-mark { background: transparent; border: 0; width: 38px; flex-basis: 38px; }
+.brand-mark img { width: 36px; height: 40px; }
+.button { font-size: 13px; font-weight: 600; }
+.search-box { border: 1px solid #d6deda; border-radius: 5px; background: #f5f7f6; height: 46px; }
+.search-box input { font-size: 14px; }
+.app-shell { height: calc(100dvh - 82px); grid-template-columns: 380px minmax(0, 1fr); }
+.sidebar { border-right: 1px solid #dce3de; }
+.filter-panel { padding: 20px; }
+.filter-row label > span { font-size: 11px; text-transform: uppercase; font-weight: 600; }
+.filter-disclosures summary { font-weight: 500; }
+.toggle-row { margin-top: 16px; }
+.results-toolbar { min-height: 62px; padding: 12px 20px; }
+.results-toolbar strong { color: #235447; }
+.result-item { text-decoration: none; padding: 19px 20px; border-bottom-color: #e5eae7; transition: background 120ms ease; }
+.result-item:hover { background: #f1f6f3; }
+.result-item h3 { font-size: 16px; font-weight: 600; line-height: 1.4; }
+.result-meta { font-size: 12px; font-weight: 500; margin-top: 9px; color: #326c59; }
+.result-address { font-size: 12px; line-height: 1.55; margin-top: 7px; }
+.result-grains { font-size: 12px; line-height: 1.55; color: #7a6541; }
+.status-dot { width: 6px; height: 6px; }
+.grain-marker { width: 19px; height: 19px; border-width: 3px; box-shadow: 0 1px 4px #18322630; }
+.grain-cluster { border: 3px solid #ffffffd9; box-shadow: 0 1px 8px #213c291a; font-weight: 500; }
+.grain-cluster-small { background: #38674e; }
+.grain-cluster-medium { background: #456b81; }
+.grain-cluster-large { background: #87643e; }
+.map-actions { top: 20px; left: auto; right: 20px; }
+.map-actions .button { background: white; min-height: 42px; box-shadow: 0 2px 7px #152b2010; }
+.leaflet-control-attribution { max-width: 580px; }
+@media (min-width: 721px) and (max-width: 1100px) {
+  .topbar { grid-template-columns: 205px minmax(140px, 1fr) auto; gap: 12px; padding: 14px 18px; }
+  .header-actions .button-secondary span { display: none; }
+  .header-actions .button-secondary { width: 40px; padding: 0; }
+  .app-shell { grid-template-columns: 335px minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .topbar { height: 120px; padding: 10px 12px; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .brand strong { font-size: 23px; }
+  .brand small { max-width: 180px; font-size: 11px; }
+  .brand-mark { width: 30px; flex-basis: 30px; }
+  .brand-mark img { width: 28px; height: 32px; }
+  .header-actions { gap: 6px; }
+  .directory-link { display: none; }
+  .search-box { height: 45px; }
+  .search-box input { font-size: 16px; }
+  .app-shell { display: block; height: calc(100dvh - 120px - 58px); }
+  .map-actions { top: 14px; right: 14px; left: auto; }
+  .filter-panel { background: white; }
+  .leaflet-control-attribution { max-width: 280px; }
+  .map-legend { bottom: 100px; }
+}

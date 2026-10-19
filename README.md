@@ -24,6 +24,9 @@ Open `http://localhost:4173`.
 ## Project structure
 
 - `index.html`, `styles.css`, `app.js`: static web application
+- `atlas.css`: map and directory styling
+- `tools/build_site.cjs`: static organization pages, directory, form, and sitemap
+- `page.js`, `submission.js`, `pages.css`: profile and contribution pages
 - `data/organizations.json`: validated public directory data
 - `tools/`: public-data build and validation utilities
 - `tests/`: regression tests for data publication safeguards
@@ -32,6 +35,7 @@ Open `http://localhost:4173`.
 - `docs/REVIEW_WORKFLOW.md`: full-list audits, Sheet downloads, website checks,
   change review, and publication snapshots
 - `docs/DATA_QUALITY.md`: evidence and publication policy
+- `docs/ORGANIZATION_PAGES.md`: profile URLs, public suggestions, and search indexing
 
 ## Contact submissions
 
@@ -41,7 +45,8 @@ the visitor reviews and sends the message themselves.
 
 ## Deployment
 
-The repository is configured as a static Vercel project. Run tests and data
+The repository is configured as a static Vercel project with a dependency-free
+Node build that generates `dist/`. Run tests and data
 validation before every production deployment. See `docs/MAINTENANCE.md` for
 the complete publication checklist.
 

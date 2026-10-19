@@ -1,10 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": null,
+  "buildCommand": "node tools/build_site.cjs",
   "installCommand": "",
-  "outputDirectory": ".",
+  "outputDirectory": "dist",
   "cleanUrls": true,
+  "trailingSlash": true,
   "headers": [
     {
       "source": "/data/organizations.json",

@@ -25,6 +25,7 @@ function boot() {
   const document = {
     querySelector(id) { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); },
     querySelectorAll() { return []; },
+    createElement: node,
     addEventListener() {},
   };
   const context = vm.createContext({ window, document, URLSearchParams });
@@ -53,6 +54,8 @@ function boot() {
       vm.runInContext("state.query = ''; parseUrlState(); syncControls();", context);
       return this.value();
     },
+    run(code) { return vm.runInContext(code, context); },
+    setSearch(search) { window.location.search = search; },
   };
 }
 
@@ -89,4 +92,24 @@ test("clear search also cancels the effect of pending search rendering", () => {
   assert.equal(app.value(), "");
   assert.equal(app.clearHidden(), true);
   assert.equal(app.matches("any organization"), true);
+});
+
+test("map deep links retain the stable ID and isolate the exact organization", () => {
+  const app = boot();
+  app.setSearch("?organization=grain-1234567890abcdef");
+  app.run("parseUrlState(); state.organizations = [{id:'grain-1234567890abcdef',name:'Same Farm',functions:[],grains:[],searchText:'same farm'}, {id:'grain-abcdef1234567890',name:'Same Farm',functions:[],grains:[],searchText:'same farm'}]");
+  assert.equal(app.run("filteredOrganizations().length"), 1);
+  assert.equal(app.run("filteredOrganizations()[0].id"), "grain-1234567890abcdef");
+  app.run("updateUrl(); state.focusedOrganizationId = ''; parseUrlState();");
+  assert.equal(app.run("state.focusedOrganizationId"), "grain-1234567890abcdef");
+  app.input("farm"); app.flush();
+  assert.equal(app.run("state.focusedOrganizationId"), "");
+  assert.equal(app.run("filteredOrganizations().length"), 2);
+});
+
+test("result cards are real organization links rather than modal-only buttons", () => {
+  const app = boot();
+  const result = app.run("resultItem({id:'grain-1234567890abcdef',name:'Farm',state:'CO',address:'',functions:['Grain Grower'],grains:['Rye']})");
+  assert.equal(result.href, "/organizations/grain-1234567890abcdef/");
+  assert.equal(result.handlers.click, undefined);
 });
