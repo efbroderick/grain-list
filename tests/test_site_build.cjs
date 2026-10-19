@@ -41,6 +41,7 @@ test("every public organization has an HTML page and a crawlable directory/sitem
     }
     assert.ok(mapHtml.includes(`app.js?v=20261019-data-${version}`));
     assert.equal(mapHtml.includes("atlas.css"), false);
+    assert.equal(/(?:href|src)="\.\//.test(mapHtml), false);
     assert.equal(mapHtml.includes('id="verified-filter"'), false);
     assert.ok(mapHtml.includes('id="distance-field" hidden'));
     assert.ok(fs.readFileSync(path.join(output, "robots.txt"), "utf8").includes(`${origin}/sitemap.xml`));
