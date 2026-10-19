@@ -125,5 +125,5 @@ test("manifest and linked PNG icons have required sizes", () => {
   assert.ok(manifest.icons.some(x => x.purpose === "maskable"));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert.match(html, /rel="manifest"/);
-  assert.match(html, /src="\.\/install\.js/);
+  assert.match(html, /src="\/install\.js/);
 });
