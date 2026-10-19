@@ -28,7 +28,7 @@ ${noindex ? '<meta name="robots" content="noindex,follow">' : ""}
 <meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(canonical)}">
 <meta property="og:image" content="${escape(new URL('/assets/app-icon-512.png', origin).href)}">
 <link rel="icon" href="/assets/favicon.png"><link rel="apple-touch-icon" href="/assets/app-icon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261016-pages"><link rel="stylesheet" href="/pages.css?v=20261016">
+<link rel="stylesheet" href="/styles.css?v=20261019-corrections"><link rel="stylesheet" href="/pages.css?v=20261016">
 ${structured ? `<script type="application/ld+json">${jsonScript(structured)}</script>` : ""}
 </head><body class="document-page">
 <header class="page-topbar"><a class="brand" href="/" aria-label="Grain List home"><span class="brand-mark"><img src="/assets/brand-mark.png" alt=""></span><strong>Grain List</strong></a>
@@ -42,7 +42,7 @@ ${content}
 function tags(values, grain = false) {
   return `<ul class="profile-tags${grain ? " profile-grains" : ""}">${values.map(value => `<li>${escape(value)}</li>`).join("")}</ul>`;
 }
-function profile(organization, origin) {
+function profile(organization, origin, mapTemplate = "") {
   const o = organization;
   const route = organizationPath(o);
   const locality = [o.city, o.state].filter(Boolean).join(", ");
@@ -72,7 +72,16 @@ ${sourceLinks ? `<details class="profile-section profile-sources"><summary>Sourc
     ...(o.address ? { address: o.address } : {}), ...(o.phone ? { telephone: o.phone } : {}),
     ...(o.email ? { email: o.email } : {}),
   };
-  return page({ title: `${o.name}${locality ? ` | ${locality}` : ""} | Grain List`, description, route, content, origin, structured });
+  const html = page({ title: `${o.name}${locality ? ` | ${locality}` : ""} | Grain List`, description, route, content, origin, structured });
+  if (!mapTemplate) return html;
+  // The initial HTML remains readable to crawlers and without JavaScript. The
+  // same map app enhances it into the original overlay without changing its URL.
+  const bodyStart = '<body class="document-page">';
+  const [head, body] = html.split(bodyStart);
+  const fallback = body.split("</body>")[0].replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "");
+  const mapBody = mapTemplate.split('<body data-mobile-view="map">')[1].split("</body>")[0].replaceAll('="./', '="/');
+  const mapStyles = [...mapTemplate.matchAll(/<link\s[^>]*rel="stylesheet"[^>]*>/g)].map(match => match[0]).filter(link => !link.includes("styles.css")).join("\n");
+  return `${head.replace("</head>", `${mapStyles}</head>`)}${bodyStart}<div id="static-profile-content">${fallback}</div><div id="map-app-shell" hidden>${mapBody}</div></body></html>`;
 }
 function directory(organizations, origin) {
   const groups = new Map();
@@ -123,7 +132,8 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   const temporary = `${output}.tmp`;
   fs.rmSync(temporary, { recursive: true, force: true });
   fs.mkdirSync(temporary, { recursive: true });
-  for (const file of ["index.html", "app.js", "styles.css", "atlas.css", "pages.css", "page.js", "submission.js", "install.js", "manifest.webmanifest", "site-config.js"]) {
+  const mapTemplate = fs.readFileSync(path.join(root, "index.html"), "utf8").replaceAll(DEFAULT_ORIGIN, url.origin);
+  for (const file of ["index.html", "app.js", "styles.css", "pages.css", "page.js", "submission.js", "install.js", "manifest.webmanifest", "site-config.js"]) {
     if (file === "index.html") fs.writeFileSync(path.join(temporary, file), fs.readFileSync(path.join(root, file), "utf8").replaceAll(DEFAULT_ORIGIN, url.origin));
     else fs.copyFileSync(path.join(root, file), path.join(temporary, file));
   }
@@ -135,7 +145,7 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     fs.writeFileSync(destination, html);
   }
-  for (const o of payload.organizations) write(organizationPath(o), profile(o, origin));
+  for (const o of payload.organizations) write(organizationPath(o), profile(o, origin, mapTemplate));
   write("/organizations/", directory(payload.organizations, origin));
   write("/add/", contribution(functions, origin));
   const routes = ["/", "/organizations/", ...payload.organizations.map(organizationPath)];

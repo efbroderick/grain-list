@@ -20,6 +20,10 @@ test("every public organization has an HTML page and a crawlable directory/sitem
       const route = organizationPath(organization);
       const html = fs.readFileSync(path.join(output, route, "index.html"), "utf8");
       assert.ok(html.includes("<h1>"));
+      assert.ok(html.includes('id="map-app-shell" hidden'));
+      assert.ok(html.includes('id="detail-dialog"'));
+      assert.ok(html.includes('src="/app.js?'));
+      assert.equal(html.includes('href="./'), false);
       assert.ok(html.includes(`rel="canonical" href="${origin}${route}"`));
       assert.ok(directory.includes(`href="${route}"`));
       assert.ok(sitemap.includes(`<loc>${origin}${route}</loc>`));
@@ -28,6 +32,10 @@ test("every public organization has an HTML page and a crawlable directory/sitem
     assert.equal(fs.existsSync(path.join(output, ".maintenance")), false);
     assert.equal(fs.existsSync(path.join(output, "tools")), false);
     assert.equal(fs.existsSync(path.join(output, "config")), false);
+    const mapHtml = fs.readFileSync(path.join(output, "index.html"), "utf8");
+    assert.equal(mapHtml.includes("atlas.css"), false);
+    assert.equal(mapHtml.includes('id="verified-filter"'), false);
+    assert.ok(mapHtml.includes('id="distance-field" hidden'));
     assert.ok(fs.readFileSync(path.join(output, "robots.txt"), "utf8").includes(`${origin}/sitemap.xml`));
     assert.ok(fs.readFileSync(path.join(output, "404.html"), "utf8").includes("noindex,follow"));
     const stale = path.join(output, "organizations/grain-0000000000000000");

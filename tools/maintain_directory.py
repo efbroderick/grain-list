@@ -17,6 +17,7 @@ from build_grain_list_data import (
     split_values, write_cache,
 )
 from validate_grain_list_data import validate_payload, valid_web_url
+from standardize_directory import standardize_functions, standardize_grains
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SHEET = "https://docs.google.com/spreadsheets/d/1R1j385dUU2qMtzkSsUM5inT5tTyoTbQwI0vISf1Hav8/edit"
@@ -41,6 +42,9 @@ def read_source(path):
         rows = [{key: str(value or "").strip() for key, value in row.items() if key is not None} for row in reader if any(row.values())]
     if not rows:
         raise ValueError("The source contains no organizations; refusing an empty release.")
+    for row in rows:
+        row["Function"] = standardize_functions(row.get("Function", ""))
+        row["Grains"] = standardize_grains(row.get("Grains", ""))
     return rows, headers
 
 

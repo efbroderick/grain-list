@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#173c2a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Grain List" />
-    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Grain List</title>
     <link rel="canonical" href="https://grain-list.vercel.app/" />
     <meta property="og:title" content="Grain List" />
@@ -31,7 +31,7 @@
       rel="stylesheet"
       href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
     />
-    <link rel="stylesheet" href="./styles.css?v=20261009-cards" />
+    <link rel="stylesheet" href="./styles.css?v=20261019-corrections" />
   </head>
   <body data-mobile-view="map">
     <header class="topbar">
@@ -112,7 +112,7 @@
                 <option value="">All states</option>
               </select>
             </label>
-            <label>
+            <label id="distance-field" hidden>
               <span>Distance</span>
               <select id="radius-filter" disabled>
                 <option value="">Any distance</option>
@@ -140,15 +140,6 @@
               <div id="grain-options" class="checkbox-grid"></div>
             </details>
           </div>
-
-          <label class="toggle-row">
-            <input id="verified-filter" type="checkbox" />
-            <span class="toggle" aria-hidden="true"></span>
-            <span>
-              <strong>Verified records only</strong>
-              <small>URL, function, grain, and source are complete</small>
-            </span>
-          </label>
 
           <div class="filter-actions mobile-only">
             <button id="clear-filters-mobile" class="button button-secondary" type="button">Clear all</button>
@@ -178,10 +169,6 @@
       <section id="map-region" class="map-region" aria-label="Map of grain organizations">
         <div id="map"></div>
         <div class="map-actions">
-          <button id="map-area-button" class="button map-button" type="button">
-            <i data-lucide="scan" aria-hidden="true"></i>
-            <span>Search this area</span>
-          </button>
           <button id="fit-results-button" class="icon-button map-button" type="button" title="Fit map to results">
             <i data-lucide="maximize" aria-hidden="true"></i>
             <span class="sr-only">Fit map to results</span>
@@ -218,6 +205,22 @@
     </nav>
 
     <div id="filter-overlay" class="filter-overlay mobile-only"></div>
+
+    <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-name">
+      <div class="detail-header">
+        <div><span id="detail-category" class="eyebrow"></span><h2 id="detail-name"></h2></div>
+        <div class="detail-header-actions">
+          <button id="detail-share-button" class="icon-button" type="button" title="Share listing" aria-label="Share listing"><i data-lucide="share-2" aria-hidden="true"></i></button>
+          <button id="close-detail" class="icon-button" type="button" title="Close details" aria-label="Close details"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div id="detail-content" class="detail-content"></div>
+      <div class="detail-actions">
+        <a id="detail-suggest-button" class="button button-quiet" href="/add/"><i data-lucide="message-square-plus" aria-hidden="true"></i><span>Suggest update</span></a>
+        <button id="detail-map-button" class="button button-secondary" type="button"><i data-lucide="map-pin" aria-hidden="true"></i><span>Show on map</span></button>
+        <a id="detail-website" class="button button-primary" href="#" target="_blank" rel="noopener"><span>Visit website</span><i data-lucide="external-link" aria-hidden="true"></i></a>
+      </div>
+    </dialog>
 
     <noscript><p><a href="/organizations/">Browse the organization directory</a> or <a href="/add/">suggest an organization</a>.</p></noscript>
 
@@ -257,6 +260,6 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
     <script src="./site-config.js?v=20261007"></script>
-    <script type="module" src="./app.js?v=20261019-restore"></script>
+    <script type="module" src="./app.js?v=20261019-corrections"></script>
   </body>
 </html>

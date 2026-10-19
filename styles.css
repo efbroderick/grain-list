@@ -803,6 +803,11 @@ summary > span:last-child {
   border-bottom: 1px solid var(--line);
 }
 
+.detail-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.filter-row-location:has(#distance-field[hidden]) { grid-template-columns: minmax(0, 1fr); }
+#map-app-shell { height: 100%; }
+a.result-item { display: block; text-decoration: none; }
+
 .eyebrow {
   display: block;
   color: var(--green-2);
@@ -1217,7 +1222,8 @@ summary > span:last-child {
   }
 
   #share-button,
-  #locate-button {
+  #locate-button,
+  .directory-link {
     display: none;
   }
 

@@ -11,14 +11,24 @@ function boot() {
       value: "", hidden: false, disabled: false, handlers: {}, options: {},
       addEventListener(event, handler) { this.handlers[event] = handler; },
       querySelector() { return node(); },
+      setAttribute(name, value) { this[name] = value; },
+      showModal() { this.open = true; },
+      close() { this.open = false; },
       focus() {},
     };
   }
   const timers = new Map();
   let nextTimer = 0;
   const window = {
-    location: { search: "", pathname: "/" },
-    history: { replaceState(_state, _title, url) { window.location.search = url.slice(1); } },
+    location: { search: "", pathname: "/", origin: "https://grain-list.vercel.app" },
+    handlers: {},
+    addEventListener(name, handler) { this.handlers[name] = handler; },
+    history: {
+      state: null, previous: null,
+      replaceState(state, _title, url) { this.state = state; const parsed = new URL(url, window.location.origin); window.location.search = parsed.search; window.location.pathname = parsed.pathname; },
+      pushState(state, title, url) { this.previous = { state: this.state, url: window.location.pathname + window.location.search }; this.replaceState(state, title, url); },
+      back() { const previous = this.previous; this.replaceState(previous.state, "", previous.url); window.handlers.popstate(); },
+    },
     clearTimeout(id) { timers.delete(id); },
     setTimeout(callback) { timers.set(++nextTimer, callback); return nextTimer; },
   };
@@ -28,10 +38,10 @@ function boot() {
     createElement: node,
     addEventListener() {},
   };
-  const context = vm.createContext({ window, document, URLSearchParams });
+  const context = vm.createContext({ window, document, URLSearchParams, URL });
   // Bind the real search handler without starting Leaflet or fetching the directory.
   const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8").replace(/start\(\);\s*$/, "");
-  vm.runInContext(`${source}\nrender = () => { syncControls(); updateUrl(); }; bindEvents();`, context);
+  vm.runInContext(`${source}\nrender = () => { syncControls(); updateUrl(); }; fitResults = () => {}; bindEvents();`, context);
   return {
     input(value) {
       const input = nodes.get("#search-input");
@@ -56,6 +66,7 @@ function boot() {
     },
     run(code) { return vm.runInContext(code, context); },
     setSearch(search) { window.location.search = search; },
+    window, nodes,
   };
 }
 
@@ -94,22 +105,58 @@ test("clear search also cancels the effect of pending search rendering", () => {
   assert.equal(app.matches("any organization"), true);
 });
 
-test("map deep links retain the stable ID and isolate the exact organization", () => {
+test("map deep links retain the stable ID without hiding surrounding organizations", () => {
   const app = boot();
   app.setSearch("?organization=grain-1234567890abcdef");
   app.run("parseUrlState(); state.organizations = [{id:'grain-1234567890abcdef',name:'Same Farm',functions:[],grains:[],searchText:'same farm'}, {id:'grain-abcdef1234567890',name:'Same Farm',functions:[],grains:[],searchText:'same farm'}]");
-  assert.equal(app.run("filteredOrganizations().length"), 1);
-  assert.equal(app.run("filteredOrganizations()[0].id"), "grain-1234567890abcdef");
-  app.run("updateUrl(); state.focusedOrganizationId = ''; parseUrlState();");
   assert.equal(app.run("state.focusedOrganizationId"), "grain-1234567890abcdef");
+  assert.equal(app.run("filteredOrganizations().length"), 2);
   app.input("farm"); app.flush();
   assert.equal(app.run("state.focusedOrganizationId"), "");
   assert.equal(app.run("filteredOrganizations().length"), 2);
 });
 
-test("result cards are real organization links rather than modal-only buttons", () => {
+test("result cards have real organization links and enhance normal clicks into overlays", () => {
   const app = boot();
   const result = app.run("resultItem({id:'grain-1234567890abcdef',name:'Farm',state:'CO',address:'',functions:['Grain Grower'],grains:['Rye']})");
   assert.equal(result.href, "/organizations/grain-1234567890abcdef/");
-  assert.equal(result.handlers.click, undefined);
+  assert.equal(typeof result.handlers.click, "function");
+  let prevented = false;
+  result.handlers.click({ ctrlKey: true, preventDefault() { prevented = true; } });
+  assert.equal(prevented, false);
+});
+
+test("sidebar follows map bounds while marker candidates include offscreen matches", () => {
+  const app = boot();
+  app.run("state.organizations = [{id:'a',name:'Near',functions:[],grains:[],searchText:'',location:{lat:40,lng:-105}}, {id:'b',name:'Far',functions:[],grains:[],searchText:'',location:{lat:45,lng:-80}}]; map = {getBounds:()=>({contains:point=>point[0]===40})}");
+  assert.equal(app.run("filteredOrganizations().length"), 1);
+  assert.equal(app.run("filteredOrganizations()[0].name"), "Near");
+  assert.equal(app.run("filteredOrganizations(true).length"), 2);
+  app.run("map = {getBounds:()=>({contains:point=>point[0]===45})}");
+  assert.equal(app.run("filteredOrganizations()[0].name"), "Far");
+});
+
+test("distance is hidden until a location is available; obsolete verified flags are ignored", () => {
+  const app = boot();
+  app.setSearch("?verified=1"); app.run("parseUrlState(); syncControls();");
+  assert.equal(app.nodes.get("#distance-field").hidden, true);
+  app.run("state.userLocation={lat:40,lng:-105}; syncControls();");
+  assert.equal(app.nodes.get("#distance-field").hidden, false);
+  assert.equal(app.nodes.get("#radius-filter").disabled, false);
+  assert.equal(app.run("state.verifiedOnly"), undefined);
+});
+
+test("profile overlays update the URL, close back to the map, and can reopen from history", () => {
+  const app = boot();
+  app.run("state.organizations=[{id:'grain-1234567890abcdef',name:'Farm',category:'Farm',state:'CO',functions:['Grain Grower'],grains:['Rye'],sources:[],address:'',phone:'',email:'',url:''}]; showDetails(state.organizations[0]);");
+  assert.equal(app.window.location.pathname, "/organizations/grain-1234567890abcdef/");
+  assert.equal(app.nodes.get("#detail-dialog").open, true);
+  app.run("closeDetails()");
+  assert.equal(app.window.location.pathname, "/");
+  assert.equal(app.nodes.get("#detail-dialog").open, false);
+  app.window.location.pathname = "/organizations/grain-1234567890abcdef/";
+  app.window.handlers.popstate();
+  assert.equal(app.nodes.get("#detail-dialog").open, true);
+  app.run("closeDetails()");
+  assert.equal(app.window.location.pathname, "/");
 });

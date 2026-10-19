@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 from urllib.parse import urlparse
+from standardize_directory import NON_GRAINS
 
 DEFAULT_DATA = Path("data/organizations.json")
 DEFAULT_CONFIG = Path("config/functions.json")
@@ -55,6 +56,11 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
         functions = organization.get("functions", [])
         if functions != sorted(functions, key=str.casefold):
             issues.append(f"{label}: functions are not alphabetized")
+        if len(functions) != len(set(functions)):
+            issues.append(f"{label}: duplicate functions")
+        for grain in organization.get("grains", []):
+            if grain.strip().casefold() in NON_GRAINS:
+                issues.append(f"{label}: non-grain in Grains '{grain}'")
 
         for field in ("url",):
             value = str(organization.get(field, "")).strip()

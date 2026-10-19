@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from standardize_directory import standardize_address, standardize_functions, standardize_rows
+from standardize_directory import standardize_address, standardize_functions, standardize_grains, standardize_rows
 
 
 class StandardizeTests(unittest.TestCase):
@@ -40,3 +40,10 @@ class StandardizeTests(unittest.TestCase):
         self.assertEqual(rows[0]["Source"], original["Source"])
         self.assertEqual(original["Address"], "1 Main St, Town, CO 80000")
         self.assertEqual(changes[0]["Row"], 2)
+
+    def test_approved_whole_grain_aliases_merge_and_deduplicate(self):
+        value = "Wholesale Grain, Retail Whole Grains, Retail Grain, Wholesale Whole Grains, Grain Grower"
+        self.assertEqual(standardize_functions(value), "Grain Grower, Retail Whole Grain, Wholesale Whole Grain")
+
+    def test_legumes_are_not_grains_but_grain_varieties_are_preserved(self):
+        self.assertEqual(standardize_grains("chickpeas, Lentils, Soybeans, Pearl Millet, Hard Red Winter Wheat"), "Pearl Millet, Hard Red Winter Wheat")

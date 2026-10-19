@@ -2,9 +2,10 @@
 
 Every published organization has a stable URL:
 `/organizations/<public-id>/`. Names can change without breaking links. Clicking
-a map marker or result opens this page. Show on map opens the exact public ID,
-not a potentially ambiguous name search. The selected organization can be
-cleared with its active-filter chip; typing a new search also clears it.
+a map marker or result opens the original profile overlay above the map and
+updates the address bar to this URL. Direct links open the same map overlay.
+Back closes it, Forward reopens it, and a refresh preserves the listing.
+Show on map closes the profile and focuses the exact public ID.
 
 ## Publishing
 
@@ -50,15 +51,29 @@ Review incoming emails, verify supporting sources, apply accepted changes to
 the publication Google Sheet, and use REVIEW_WORKFLOW.md to publish. Keep Record
 IDs unchanged, including when outreach corrects an organization's name.
 
-## Map Styling
+## Map Behavior And Design Approval
 
-The Atlas split layout uses a terrain basemap with a Light option in Leaflet's
-layer control. Both use the existing public Esri raster infrastructure without
-an API key. Terrain falls back to Light after repeated tile failures. Required
-source attribution remains visible. The World Topo service is legacy/mature
-support; its cartography may not reflect current roads or buildings. Organization
-coordinates and evidence remain separate from the basemap. Revisit a maintained
-tile provider before relying on the site for navigation or scaling traffic.
+Use the original light-gray map and sans-serif typography. Numbered clusters
+have one color and indicate counts only. Individual dot colors correspond to
+the organization groups in the map key. Sidebar results automatically follow
+the visible map bounds; moving the map does not remove offscreen markers from
+the underlying layer. Distance controls appear only after Near me succeeds.
+There is no verified-only filter.
+
+Do not implement or deploy a new visual direction without showing mockups and
+obtaining explicit user approval. Permission to continue unrelated work is not
+approval of a redesign.
+
+## Taxonomy
+
+Retail Grain / Retail Whole Grains normalize to Retail Whole Grain; wholesale
+aliases normalize to Wholesale Whole Grain. Values are deduplicated and sorted.
+Chickpeas, lentils, and soybeans are legumes, not grain choices, and are excluded
+from Grains. Normalization runs during source import and dataset generation;
+public validation rejects non-grains and unsupported/duplicate functions.
+The offline `tools/clean_public_taxonomy.py` utility applies these approved
+changes to an existing local CSV and public JSON without changing coordinates
+or IDs and writes a local change report. It does not edit the Google Sheet.
 
 ## Checks
 

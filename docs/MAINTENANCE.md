@@ -59,4 +59,4 @@ Then deploy with Vercel or connect the standalone GitHub repository to Vercel.
 in `site-config.js`; changing it requires a normal redeployment.
 
 See ORGANIZATION_PAGES.md for permanent profile URLs, indexing, the sitemap,
-public suggestion handling, and the terrain/light basemap behavior.
+public suggestion handling, and the original light-map behavior.

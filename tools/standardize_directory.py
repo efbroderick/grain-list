@@ -18,7 +18,14 @@ SUFFIX_TAIL = re.compile(
     r"^\s*(?:(?:N|S|E|W|NE|NW|SE|SW|North|South|East|West)\.?\s*)?"
     r"(?:(?:\#|suite\b|ste\b|unit\b|building\b|bldg\b|apt\b).*)?$", re.I,
 )
-FUNCTION_TYPOS = {"Grian Featured on Menu": "Grain Featured on Menu"}
+FUNCTION_TYPOS = {
+    "Grian Featured on Menu": "Grain Featured on Menu",
+    "Retail Grain": "Retail Whole Grain",
+    "Retail Whole Grains": "Retail Whole Grain",
+    "Wholesale Grain": "Wholesale Whole Grain",
+    "Wholesale Whole Grains": "Wholesale Whole Grain",
+}
+NON_GRAINS = {"chickpea", "chickpeas", "garbanzo", "garbanzo beans", "lentil", "lentils", "soybean", "soybeans"}
 
 
 def standardize_address(address):
@@ -45,14 +52,19 @@ def standardize_address(address):
 
 def standardize_functions(value):
     functions = [FUNCTION_TYPOS.get(part.strip(), part.strip()) for part in (value or "").split(",") if part.strip()]
-    return ", ".join(sorted(functions, key=str.casefold))
+    return ", ".join(sorted(set(functions), key=str.casefold))
+
+
+def standardize_grains(value):
+    return ", ".join(part.strip() for part in (value or "").split(",")
+                     if part.strip() and part.strip().casefold() not in NON_GRAINS)
 
 
 def standardize_rows(rows):
     result, changes = [], []
     for number, original in enumerate(rows, 2):
         row = dict(original)
-        for field, normalize in (("Address", standardize_address), ("Function", standardize_functions)):
+        for field, normalize in (("Address", standardize_address), ("Function", standardize_functions), ("Grains", standardize_grains)):
             before = row.get(field, "")
             after = normalize(before)
             if before != after:

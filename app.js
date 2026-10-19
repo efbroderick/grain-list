@@ -1,4 +1,4 @@
-const DATA_URL = "./data/organizations.json";
+const DATA_URL = "/data/organizations.json";
 const USA_VIEW = { center: [39.5, -98.35], zoom: 4 };
 const MAX_VISIBLE_RESULTS = 250;
 
@@ -7,7 +7,7 @@ const elements = {
   clearSearch: document.querySelector("#clear-search"),
   state: document.querySelector("#state-filter"),
   radius: document.querySelector("#radius-filter"),
-  verified: document.querySelector("#verified-filter"),
+  distanceField: document.querySelector("#distance-field"),
   functions: document.querySelector("#function-options"),
   grains: document.querySelector("#grain-options"),
   functionSummary: document.querySelector("#function-summary"),
@@ -27,9 +27,17 @@ const elements = {
   filterOverlay: document.querySelector("#filter-overlay"),
   clearFiltersMobile: document.querySelector("#clear-filters-mobile"),
   showResults: document.querySelector("#show-results"),
-  mapArea: document.querySelector("#map-area-button"),
   fitResults: document.querySelector("#fit-results-button"),
   mapEmpty: document.querySelector("#map-empty"),
+  detail: document.querySelector("#detail-dialog"),
+  detailName: document.querySelector("#detail-name"),
+  detailCategory: document.querySelector("#detail-category"),
+  detailContent: document.querySelector("#detail-content"),
+  detailWebsite: document.querySelector("#detail-website"),
+  detailMap: document.querySelector("#detail-map-button"),
+  detailSuggest: document.querySelector("#detail-suggest-button"),
+  detailShare: document.querySelector("#detail-share-button"),
+  closeDetail: document.querySelector("#close-detail"),
   toast: document.querySelector("#toast"),
 };
 
@@ -39,12 +47,11 @@ const state = {
   stateCode: "",
   functions: new Set(),
   grains: new Set(),
-  verifiedOnly: false,
   radius: "",
   sort: "name",
-  boundsOnly: false,
   userLocation: null,
   focusedOrganizationId: "",
+  selectedOrganization: null,
 };
 
 let map;
@@ -166,8 +173,13 @@ function initializeMap() {
   });
   map.addLayer(markerLayer);
   map.on("moveend", () => {
-    if (state.boundsOnly) render();
+    renderViewportResults();
   });
+}
+
+function listingIdFromLocation() {
+  const route = window.location.pathname.match(/^\/organizations\/(grain-[a-f0-9]{16})\/?$/);
+  return route?.[1] || new URLSearchParams(window.location.search).get("organization") || "";
 }
 
 function parseUrlState() {
@@ -176,9 +188,8 @@ function parseUrlState() {
   state.stateCode = params.get("state") || "";
   state.functions = new Set((params.get("functions") || "").split("|").filter(Boolean));
   state.grains = new Set((params.get("grains") || "").split("|").filter(Boolean));
-  state.verifiedOnly = params.get("verified") === "1";
   state.radius = params.get("radius") || "";
-  state.focusedOrganizationId = params.get("organization") || "";
+  state.focusedOrganizationId = listingIdFromLocation();
 }
 
 function updateUrl() {
@@ -187,11 +198,10 @@ function updateUrl() {
   if (state.stateCode) params.set("state", state.stateCode);
   if (state.functions.size) params.set("functions", [...state.functions].sort().join("|"));
   if (state.grains.size) params.set("grains", [...state.grains].sort().join("|"));
-  if (state.verifiedOnly) params.set("verified", "1");
   if (state.radius && state.userLocation) params.set("radius", state.radius);
-  if (state.focusedOrganizationId) params.set("organization", state.focusedOrganizationId);
   const query = params.toString();
-  window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  const route = state.selectedOrganization ? organizationUrl(state.selectedOrganization) : "/";
+  window.history.replaceState(window.history.state, "", `${route}${query ? `?${query}` : ""}`);
 }
 
 function countsFor(key) {
@@ -223,6 +233,7 @@ function renderCheckboxOptions(container, entries, selected, key) {
       });
       syncControls();
       render();
+      fitResults();
     });
     container.append(label);
   }
@@ -247,13 +258,13 @@ function syncControls() {
   elements.state.value = state.stateCode;
   elements.radius.value = state.userLocation ? state.radius : "";
   elements.radius.disabled = !state.userLocation;
-  elements.verified.checked = state.verifiedOnly;
+  elements.distanceField.hidden = !state.userLocation;
   elements.sort.value = state.sort;
   elements.sort.options.namedItem?.("distance");
   elements.sort.querySelector('option[value="distance"]').disabled = !state.userLocation;
   elements.functionSummary.textContent = state.functions.size ? `${state.functions.size} selected` : "All";
   elements.grainSummary.textContent = state.grains.size ? `${state.grains.size} selected` : "All";
-  const filterCount = Number(Boolean(state.stateCode)) + state.functions.size + state.grains.size + Number(state.verifiedOnly) + Number(Boolean(state.radius));
+  const filterCount = Number(Boolean(state.stateCode)) + state.functions.size + state.grains.size + Number(Boolean(state.radius));
   elements.filterCount.textContent = filterCount;
   elements.filterCount.hidden = filterCount === 0;
 }
@@ -268,16 +279,14 @@ function matchesSelection(values, selected) {
   return selected.size === 0 || values.some((value) => selected.has(value));
 }
 
-function filteredOrganizations() {
-  const bounds = state.boundsOnly && map ? map.getBounds() : null;
+function filteredOrganizations(ignoreBounds = false) {
+  const bounds = !ignoreBounds && map ? map.getBounds() : null;
   const radius = state.userLocation && state.radius ? Number(state.radius) : null;
   const results = state.organizations.filter((organization) => {
-    if (state.focusedOrganizationId && organization.id !== state.focusedOrganizationId) return false;
     if (!matchesQuery(organization)) return false;
     if (state.stateCode && organization.state !== state.stateCode) return false;
     if (!matchesSelection(organization.functions, state.functions)) return false;
     if (!matchesSelection(organization.grains, state.grains)) return false;
-    if (state.verifiedOnly && organization.status !== "Verified") return false;
     if (radius) {
       if (!hasDistancePrecision(organization)) return false;
       if (distanceMiles(state.userLocation, organization.location) > radius) return false;
@@ -318,7 +327,7 @@ function renderMarkers(organizations) {
       ? `${organization.name} · approximate location`
       : organization.name;
     marker.bindTooltip(tooltip, { direction: "top", offset: [0, -14] });
-    marker.on("click", () => window.location.assign(organizationUrl(organization)));
+    marker.on("click", () => showDetails(organization));
     markersById.set(organization.id, marker);
     markerLayer.addLayer(marker);
   }
@@ -329,6 +338,11 @@ function resultItem(organization) {
   const button = document.createElement("a");
   button.className = "result-item";
   button.href = organizationUrl(organization);
+  button.addEventListener("click", event => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (event.button != null && event.button !== 0)) return;
+    event.preventDefault();
+    showDetails(organization);
+  });
   const locationText = organization.address || `${organization.state} · Approximate location`;
   const distance = organization.distance == null ? "" : `${organization.distance.toFixed(organization.distance < 10 ? 1 : 0)} mi`;
   const functionText = organization.functions.length
@@ -351,6 +365,62 @@ function resultItem(organization) {
 
 function organizationUrl(organization) {
   return `/organizations/${encodeURIComponent(organization.id)}/`;
+}
+
+function webLink(value) {
+  try { return ["http:", "https:"].includes(new URL(value).protocol) ? value : ""; }
+  catch { return ""; }
+}
+
+function showDetails(organization, pushHistory = true) {
+  const previous = state.selectedOrganization;
+  const returnUrl = window.history.state?.returnUrl || `${window.location.pathname}${window.location.search}`;
+  state.selectedOrganization = organization;
+  state.focusedOrganizationId = "";
+  elements.detailName.textContent = organization.name;
+  elements.detailCategory.textContent = [organization.category, organization.state].filter(Boolean).join(" · ");
+  const section = (title, content) => `<section class="detail-section"><h3>${title}</h3>${content}</section>`;
+  const tags = (values, grain = false) => `<div class="tag-list">${values.map(value => `<span class="tag${grain ? " grain" : ""}">${escapeHtml(value)}</span>`).join("")}</div>`;
+  const content = [];
+  if (organization.functions.length) content.push(section("Functions", tags(organization.functions)));
+  if (organization.grains.length) content.push(section("Grains", tags(organization.grains, true)));
+  const note = locationNote(organization);
+  if (note) content.push(section("Map location", `<p class="location-note">${escapeHtml(note)}</p>`));
+  const contact = [
+    organization.address ? `<p>${escapeHtml(organization.address)}</p>` : "",
+    /\bP\.?\s*O\.?\s*Box\b/i.test(organization.address) ? '<p class="location-note">Mailing address, not a visitor address.</p>' : "",
+    organization.phone ? `<a href="tel:${escapeHtml(organization.phone.replace(/[^\d+]/g, ""))}">${escapeHtml(organization.phone)}</a>` : "",
+    organization.email ? `<a href="mailto:${escapeHtml(organization.email)}">${escapeHtml(organization.email)}</a>` : "",
+  ].join("");
+  if (contact) content.push(section("Contact", `<div class="contact-list">${contact}</div>`));
+  const sources = organization.sources.filter(webLink);
+  if (sources.length) content.push(`<details class="detail-section detail-disclosure"><summary><span>Sources</span><span class="detail-disclosure-meta">${sources.length} ${sources.length === 1 ? "source" : "sources"}<i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="contact-list">${sources.map((url, index) => `<a class="source-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">Source ${index + 1}: ${escapeHtml(new URL(url).hostname.replace(/^www\./, ""))}</a>`).join("")}</div></details>`);
+  elements.detailContent.innerHTML = content.join("");
+  elements.detailWebsite.hidden = !webLink(organization.url);
+  if (webLink(organization.url)) elements.detailWebsite.href = organization.url;
+  elements.detailMap.hidden = !organization.location;
+  elements.detailSuggest.href = `/add/?organization=${encodeURIComponent(organization.id)}&type=correction`;
+  const params = new URLSearchParams(window.location.search);
+  params.delete("organization");
+  const query = params.toString();
+  const url = `${organizationUrl(organization)}${query ? `?${query}` : ""}`;
+  if (pushHistory && !previous) window.history.pushState({ grainListOverlay: true, returnUrl }, "", url);
+  else window.history.replaceState(window.history.state, "", url);
+  document.title = `${organization.name} | Grain List`;
+  document.querySelector('link[rel="canonical"]')?.setAttribute("href", `${window.location.origin}${organizationUrl(organization)}`);
+  if (!elements.detail.open) elements.detail.showModal();
+  window.lucide?.createIcons();
+}
+
+function closeDetails() {
+  if (!state.selectedOrganization) return;
+  state.selectedOrganization = null;
+  state.focusedOrganizationId = "";
+  elements.detail.close();
+  document.title = "Grain List";
+  document.querySelector('link[rel="canonical"]')?.setAttribute("href", `${window.location.origin}/`);
+  if (window.history.state?.grainListOverlay) window.history.back();
+  else updateUrl();
 }
 
 function renderResults(organizations) {
@@ -392,16 +462,10 @@ function activeFilterButton(label, onRemove) {
 function renderActiveFilters() {
   elements.activeFilters.replaceChildren();
   const filters = [];
-  if (state.focusedOrganizationId) {
-    const focused = state.organizations.find(item => item.id === state.focusedOrganizationId);
-    filters.push([focused?.name || "Selected listing", () => { state.focusedOrganizationId = ""; }]);
-  }
   if (state.stateCode) filters.push([state.stateCode, () => { state.stateCode = ""; }]);
   for (const value of state.functions) filters.push([value, () => state.functions.delete(value)]);
   for (const value of state.grains) filters.push([value, () => state.grains.delete(value)]);
-  if (state.verifiedOnly) filters.push(["Verified only", () => { state.verifiedOnly = false; }]);
   if (state.radius) filters.push([`${state.radius} miles`, () => { state.radius = ""; }]);
-  if (state.boundsOnly) filters.push(["This map area", () => { state.boundsOnly = false; }]);
   for (const [label, remove] of filters) {
     elements.activeFilters.append(activeFilterButton(label, () => {
       remove();
@@ -409,22 +473,26 @@ function renderActiveFilters() {
       renderCheckboxOptions(elements.grains, countsFor("grains"), state.grains, "grains");
       syncControls();
       render();
+      fitResults();
     }));
   }
   window.lucide?.createIcons();
 }
 
-function render() {
-  lastFiltered = filteredOrganizations();
-  const mapped = lastFiltered.filter((item) => item.location).length;
-  elements.resultCount.textContent = pluralize(lastFiltered.length, "organization");
+function renderViewportResults() {
+  const visible = filteredOrganizations();
+  const mapped = visible.filter((item) => item.location).length;
+  elements.resultCount.textContent = pluralize(visible.length, "organization");
   elements.mappedCount.textContent = `${mapped.toLocaleString()} mapped`;
-  renderResults(lastFiltered);
+  renderResults(visible);
+}
+
+function render() {
+  lastFiltered = filteredOrganizations(true);
   renderMarkers(lastFiltered);
+  renderViewportResults();
   renderActiveFilters();
   syncControls();
-  elements.mapArea.classList.toggle("is-active", state.boundsOnly);
-  elements.mapArea.querySelector("span").textContent = state.boundsOnly ? "Showing this area" : "Search this area";
   updateUrl();
 }
 
@@ -442,6 +510,7 @@ function focusLinkedOrganization() {
   map.setView([organization.location.lat, organization.location.lng], zoom);
   const marker = markersById.get(organization.id);
   if (marker) markerLayer.zoomToShowLayer(marker, () => marker.openTooltip());
+  showDetails(organization, false);
 }
 
 function fitResults() {
@@ -498,14 +567,13 @@ function clearAllFilters() {
   state.stateCode = "";
   state.functions.clear();
   state.grains.clear();
-  state.verifiedOnly = false;
   state.radius = "";
-  state.boundsOnly = false;
   state.sort = "name";
   renderCheckboxOptions(elements.functions, countsFor("functions"), state.functions, "functions");
   renderCheckboxOptions(elements.grains, countsFor("grains"), state.grains, "grains");
   syncControls();
   render();
+  fitResults();
 }
 
 function closeFilters() {
@@ -519,28 +587,25 @@ function bindEvents() {
     state.focusedOrganizationId = "";
     elements.clearSearch.hidden = !state.query;
     window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(render, 120);
+    searchTimer = window.setTimeout(() => { render(); fitResults(); }, 120);
   });
   elements.clearSearch.addEventListener("click", () => {
     state.query = "";
     elements.search.value = "";
     elements.search.focus();
     render();
+    fitResults();
   });
   elements.state.addEventListener("change", (event) => {
     state.stateCode = event.target.value;
-    state.boundsOnly = false;
     render();
-    if (state.stateCode) fitResults();
+    fitResults();
   });
   elements.radius.addEventListener("change", (event) => {
     state.radius = event.target.value;
     if (state.radius) state.sort = "distance";
     render();
-  });
-  elements.verified.addEventListener("change", (event) => {
-    state.verifiedOnly = event.target.checked;
-    render();
+    fitResults();
   });
   elements.sort.addEventListener("change", (event) => {
     state.sort = event.target.value;
@@ -557,11 +622,42 @@ function bindEvents() {
     syncMobileViewButtons();
   });
   elements.clearFiltersMobile.addEventListener("click", clearAllFilters);
-  elements.mapArea.addEventListener("click", () => {
-    state.boundsOnly = !state.boundsOnly;
-    render();
-  });
   elements.fitResults.addEventListener("click", fitResults);
+  elements.closeDetail.addEventListener("click", closeDetails);
+  elements.detail.addEventListener("cancel", event => { event.preventDefault(); closeDetails(); });
+  elements.detail.addEventListener("close", closeDetails);
+  elements.detail.addEventListener("click", event => { if (event.target === elements.detail) closeDetails(); });
+  elements.detailMap.addEventListener("click", () => {
+    const organization = state.selectedOrganization;
+    closeDetails();
+    if (!organization?.location) return;
+    document.body.dataset.mobileView = "map";
+    syncMobileViewButtons();
+    map.invalidateSize();
+    const zoom = organization.location.precision === "state" ? 5 : organization.location.precision === "place" ? 11 : 13;
+    map.setView([organization.location.lat, organization.location.lng], zoom);
+    markersById.get(organization.id)?.openTooltip();
+  });
+  elements.detailShare.addEventListener("click", async () => {
+    const organization = state.selectedOrganization;
+    if (!organization) return;
+    const url = `${window.location.origin}${organizationUrl(organization)}`;
+    try {
+      if (navigator.share) await navigator.share({ title: organization.name, url });
+      else { await navigator.clipboard.writeText(url); showToast("Listing link copied."); }
+    } catch (error) { if (error.name !== "AbortError") showToast("Could not share this listing."); }
+  });
+  window.addEventListener("popstate", () => {
+    const id = listingIdFromLocation();
+    const organization = state.organizations.find(item => item.id === id);
+    if (organization) showDetails(organization, false);
+    else {
+      state.selectedOrganization = null;
+      elements.detail.close();
+      document.title = "Grain List";
+      document.querySelector('link[rel="canonical"]')?.setAttribute("href", `${window.location.origin}/`);
+    }
+  });
   elements.share.addEventListener("click", async () => {
     const shareData = { title: "Grain List", text: "Explore grain organizations", url: window.location.href };
     try {
@@ -594,7 +690,6 @@ function syncMobileViewButtons() {
 
 async function start() {
   parseUrlState();
-  initializeMap();
   bindEvents();
   try {
     const response = await fetch(DATA_URL);
@@ -613,6 +708,14 @@ async function start() {
       ].join(" ")),
     }));
     elements.datasetSummary.textContent = `${payload.summary.total.toLocaleString()} active organizations · ${payload.summary.mapped.toLocaleString()} mapped`;
+    const shell = document.querySelector("#map-app-shell");
+    if (shell) {
+      document.querySelector("#static-profile-content").hidden = true;
+      document.body.classList.remove("document-page");
+      document.body.dataset.mobileView = "map";
+      shell.hidden = false;
+    }
+    initializeMap();
     initializeControls();
     render();
     fitResults();
