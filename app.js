@@ -147,20 +147,7 @@ function initializeMap() {
     maxZoom: 16,
     pane: "shadowPane",
   });
-  const light = L.layerGroup([lightBase, lightLabels]);
-  const terrain = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
-    maxZoom: 16,
-    attribution: 'Sources: Esri, HERE, Garmin, Intermap, increment P, GEBCO, USGS, FAO, NPS, NRCAN, GeoBase, IGN, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China, &copy; OpenStreetMap contributors, GIS User Community',
-  }).addTo(map);
-  L.control.layers({ Terrain: terrain, Light: light }, {}, { position: "bottomright" }).addTo(map);
-  let terrainErrors = 0;
-  terrain.on("tileerror", () => {
-    if (++terrainErrors === 3 && map.hasLayer(terrain)) {
-      map.removeLayer(terrain);
-      light.addTo(map);
-      showToast("Terrain tiles are unavailable. Showing the light map instead.");
-    }
-  });
+  L.layerGroup([lightBase, lightLabels]).addTo(map);
   markerLayer = L.markerClusterGroup({
     chunkedLoading: true,
     showCoverageOnHover: false,
