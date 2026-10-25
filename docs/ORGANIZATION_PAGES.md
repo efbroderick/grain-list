@@ -1,7 +1,9 @@
 # Organization Pages And Suggestions
 
-Every published organization has a stable URL:
-`/organizations/<public-id>/`. Names can change without breaking links. Clicking
+Every published organization has a name-based URL, for example
+`/organizations/aspen-moon-farm/`. Stable IDs remain internal to record matching.
+Old ID-based URLs permanently redirect to the current named URL. Name changes
+keep the earlier named URL as another permanent redirect. Clicking
 a map marker or result opens the original profile overlay above the map and
 updates the address bar to this URL. Direct links open the same map overlay.
 Back closes it, Forward reopens it, and a refresh preserves the listing.
@@ -21,6 +23,14 @@ step. Dataset requests and the app entry script include a content-hash version,
 so browser/CDN caches cannot retain an earlier release's taxonomy or contacts.
 Removed listings do not leave stale pages behind. Do not add a catch-all
 rewrite to index.html: unknown profile URLs must return HTTP 404.
+
+After publishing a data candidate locally, run
+`node tools/update_organization_routes.cjs` before testing, building, or pushing.
+Commit both `config/organization-routes.json` and the generated `vercel.json`
+redirects with the data. The build refuses stale route definitions. Duplicate
+names receive location suffixes; retired paths are reserved to prevent an old
+link ever identifying an unrelated organization. Redirects are excluded from
+the sitemap; canonical named pages retain the same profile-over-map behavior.
 
 The default canonical origin is https://grain-list.vercel.app. Set the
 `GRAIN_LIST_ORIGIN` build environment variable when adopting a custom domain.

@@ -16,7 +16,8 @@ test("every public organization has an HTML page and a crawlable directory/sitem
     assert.equal(buildSite({ root, output, origin }), data.organizations.length);
     const directory = fs.readFileSync(path.join(output, "organizations/index.html"), "utf8");
     const sitemap = fs.readFileSync(path.join(output, "sitemap.xml"), "utf8");
-    for (const organization of data.organizations) {
+    const published = JSON.parse(fs.readFileSync(path.join(output, "data/organizations.json")));
+    for (const organization of published.organizations) {
       const route = organizationPath(organization);
       const html = fs.readFileSync(path.join(output, route, "index.html"), "utf8");
       assert.ok(html.includes("<h1>"));
@@ -27,6 +28,10 @@ test("every public organization has an HTML page and a crawlable directory/sitem
       assert.ok(html.includes(`rel="canonical" href="${origin}${route}"`));
       assert.ok(directory.includes(`href="${route}"`));
       assert.ok(sitemap.includes(`<loc>${origin}${route}</loc>`));
+      const oldRoute = `/organizations/${organization.id}/`;
+      const alias = fs.readFileSync(path.join(output, oldRoute, "index.html"), "utf8");
+      assert.ok(alias.includes(`url=${route}`));
+      assert.equal(sitemap.includes(`<loc>${origin}${oldRoute}</loc>`), false);
     }
     assert.equal(fs.existsSync(path.join(output, "data/publication_list.csv")), false);
     assert.equal(fs.existsSync(path.join(output, ".maintenance")), false);
@@ -70,8 +75,9 @@ test("profile content and JSON-LD are escaped; approximate coordinates are not a
   assert.ok(html.includes('<details class="profile-section profile-sources">'));
 });
 
-test("renaming an organization does not change its permanent URL", () => {
-  assert.equal(organizationPath(sample), organizationPath({ ...sample, name: "New name" }));
+test("organization URLs use readable names while stable IDs remain unchanged", () => {
+  assert.equal(organizationPath(sample), "/organizations/40-century-grain/");
+  assert.equal(organizationPath({ ...sample, name: "New name" }), "/organizations/new-name/");
 });
 
 test("builder refuses empty data, private fields, duplicate IDs and unsafe ID paths", () => {

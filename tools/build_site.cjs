@@ -1,13 +1,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { createHash } = require("node:crypto");
+const { organizationPath, assignRoutes, routeRedirects } = require("./organization_routes.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 const DEFAULT_ORIGIN = "https://grain-list.vercel.app";
 const PUBLIC_FIELDS = new Set(["id", "name", "category", "state", "city", "functions", "grains", "address", "phone", "email", "url", "status", "sources", "location"]);
 const STATES = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ").sort();
 const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
-const organizationPath = organization => `/organizations/${organization.id}/`;
 const icon = name => `<i data-lucide="${name}" aria-hidden="true"></i>`;
 function webUrl(value) {
   try { return ["https:", "http:"].includes(new URL(value).protocol) ? value : ""; }
@@ -130,6 +130,14 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
     seen.add(o.id);
   }
   if (!seen.size) throw new Error("Cannot build an empty directory");
+  const registry = JSON.parse(fs.readFileSync(path.join(root, "config/organization-routes.json"), "utf8"));
+  const expected = assignRoutes(payload.organizations, registry);
+  if (JSON.stringify(expected) !== JSON.stringify(registry)) throw new Error("Organization routes are stale. Run node tools/update_organization_routes.cjs before publishing.");
+  const organizations = payload.organizations.map(o => ({ ...o, slug: registry.organizations[o.id].slug }));
+  const redirects = routeRedirects(payload.organizations, registry);
+  const deployment = JSON.parse(fs.readFileSync(path.join(root, "vercel.json")));
+  if (redirects.some(redirect => !deployment.redirects?.some(item => item.source === redirect.source && item.destination === redirect.destination && item.permanent))) throw new Error("Organization redirects are stale. Run node tools/update_organization_routes.cjs before publishing.");
+  const publicPayload = { ...payload, organizations };
   const functions = JSON.parse(fs.readFileSync(path.join(root, "config/functions.json"), "utf8")).allowed_functions;
   // Build in a fresh sibling directory so removed organizations cannot leave stale pages.
   const temporary = `${output}.tmp`;
@@ -143,16 +151,17 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   }
   fs.cpSync(path.join(root, "assets"), path.join(temporary, "assets"), { recursive: true });
   fs.mkdirSync(path.join(temporary, "data"));
-  fs.copyFileSync(path.join(root, "data/organizations.json"), path.join(temporary, "data/organizations.json"));
+  fs.writeFileSync(path.join(temporary, "data/organizations.json"), JSON.stringify(publicPayload));
   function write(route, html) {
     const destination = path.join(temporary, route, "index.html");
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     fs.writeFileSync(destination, html.replaceAll("__DATA_VERSION__", dataVersion));
   }
-  for (const o of payload.organizations) write(organizationPath(o), profile(o, origin, mapTemplate));
-  write("/organizations/", directory(payload.organizations, origin));
+  for (const o of organizations) write(organizationPath(o), profile(o, origin, mapTemplate));
+  for (const redirect of redirects) write(redirect.source, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=${escape(redirect.destination)}"><link rel="canonical" href="${escape(new URL(redirect.destination, origin).href)}"><title>Listing moved | Grain List</title></head><body><a href="${escape(redirect.destination)}">Open organization</a></body></html>`);
+  write("/organizations/", directory(organizations, origin));
   write("/add/", contribution(functions, origin));
-  const routes = ["/", "/organizations/", ...payload.organizations.map(organizationPath)];
+  const routes = ["/", "/organizations/", ...organizations.map(organizationPath)];
   fs.writeFileSync(path.join(temporary, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escape(new URL(route, origin).href)}</loc></url>`).join("")}</urlset>`);
   fs.writeFileSync(path.join(temporary, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${new URL('/sitemap.xml', origin).href}\n`);
   fs.writeFileSync(path.join(temporary, "404.html"), page({ title: "Listing Not Found | Grain List", description: "This Grain List page is not available.", route: "/404", content: '<main class="page-main"><h1>Listing not found</h1><p>This listing may have been removed or its link is incorrect.</p><a class="button button-primary" href="/">Explore Grain List</a></main>', origin, noindex: true }));

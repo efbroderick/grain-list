@@ -18,10 +18,11 @@ python tools/standardize_directory.py --input /path/to/download.csv \
 ```
 
 This spells out street types in numbered addresses and alphabetizes each
-Function list, without changing grain values, contacts, or sources. Saint
+Function list, merges approved Function aliases, and deduplicates Grains while
+excluding legumes. It does not invent grain varieties, contacts, or sources. Saint
 names such as St. Louis are preserved. The original export is never overwritten.
 The publication vocabulary also supports the manually reviewed Grain Distiller,
-Grain Malter, Retail Grain, and Wholesale Grain labels.
+Grain Malter, Retail Whole Grain, and Wholesale Whole Grain labels.
 
 Use the cleaned CSV for the checks below. Formatting-only address changes reuse
 map points only when the location's state and identity still match; a real
@@ -108,10 +109,10 @@ the factual claims. When present, missing/invalid dates and reviews older than
 Correct errors, review all warnings, and inspect Changes before running:
 
 ```bash
-make test
 python tools/maintain_directory.py --input /path/to/download.csv \
   --exceptions /path/to/reviewed_exceptions.csv --publish
-make validate
+node tools/update_organization_routes.cjs
+make test validate build
 ```
 
 Review removed records and add `--allow-removals` to confirm those changes.
@@ -124,3 +125,20 @@ source CSV, previous data, candidate data, source hash, and release manifest in
 JSON to GitHub for Vercel deployment. Reports/snapshots stay local and are ignored
 by Git. To restore an old release, preserve the current file and inspect saved
 previous.json first; this does not change the Sheet.
+
+## Color-Coded Outreach Imports
+
+`tools/import_highlighted_sheet.py` reads an exported, read-only JSON snapshot
+of formatted Sheet cells. Green rows add records, red rows become Closed in the
+local publication copy, and purple rows update existing records. New unmarked
+records are included when the Sheet is the complete latest list. Existing IDs
+are retained; a re-entered record can recover its ID only from a unique name/state
+or a unique matching phone-and-email pair. Ambiguities and unexplained missing
+active IDs stop the import. Keep the source snapshot, explicit sourced overrides,
+actions.csv, and import-report.json in the local release directory.
+
+The importer does not write to Google Sheets. Newly allocated IDs live in the
+local publication copy; retain that copy for the next refresh. Highlights that
+remain in the Sheet do not allocate a new ID when the record matches an existing
+identity. Review omissions separately: a user-added record with unknown details
+stays Partial, and city/region map matches must remain labeled approximate.

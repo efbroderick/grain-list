@@ -160,3 +160,14 @@ test("profile overlays update the URL, close back to the map, and can reopen fro
   app.run("closeDetails()");
   assert.equal(app.window.location.pathname, "/");
 });
+
+test("named profile URLs resolve to the same organization overlay", () => {
+  const app = boot();
+  app.window.location.pathname = "/organizations/aspen-moon-farm/";
+  app.run("state.organizations=[{id:'grain-1234567890abcdef',slug:'aspen-moon-farm',name:'Aspen Moon Farm',category:'Farm',state:'CO',functions:[],grains:[],sources:[],address:'',phone:'',email:'',url:''}]");
+  app.window.handlers.popstate();
+  assert.equal(app.nodes.get("#detail-name").textContent, "Aspen Moon Farm");
+  assert.equal(app.window.location.pathname, "/organizations/aspen-moon-farm/");
+  app.run("closeDetails()");
+  assert.equal(app.window.location.pathname, "/");
+});

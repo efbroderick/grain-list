@@ -80,7 +80,9 @@ STATE_CENTERS = {
     "WY": (42.755966, -107.302490),
 }
 PLACE_TYPES = {
-    "state", "county", "city", "town", "village", "hamlet", "municipality", "road"
+    "state", "county", "city", "town", "village", "hamlet", "municipality", "road",
+    "primary", "secondary", "tertiary", "unclassified", "residential", "service",
+    "trunk", "motorway", "footway", "path", "neighbourhood", "suburb",
 }
 
 

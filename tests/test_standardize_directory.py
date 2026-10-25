@@ -47,3 +47,5 @@ class StandardizeTests(unittest.TestCase):
 
     def test_legumes_are_not_grains_but_grain_varieties_are_preserved(self):
         self.assertEqual(standardize_grains("chickpeas, Lentils, Soybeans, Pearl Millet, Hard Red Winter Wheat"), "Pearl Millet, Hard Red Winter Wheat")
+        self.assertEqual(standardize_grains("Khorasan Wheat, Rye, Khorasan Wheat"), "Khorasan Wheat, Rye")
+        self.assertEqual(standardize_functions("Retail WholeGrain, Retail Grain"), "Retail Whole Grain")

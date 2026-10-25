@@ -22,8 +22,10 @@ FUNCTION_TYPOS = {
     "Grian Featured on Menu": "Grain Featured on Menu",
     "Retail Grain": "Retail Whole Grain",
     "Retail Whole Grains": "Retail Whole Grain",
+    "Retail WholeGrain": "Retail Whole Grain",
     "Wholesale Grain": "Wholesale Whole Grain",
     "Wholesale Whole Grains": "Wholesale Whole Grain",
+    "Wholesale WholeGrain": "Wholesale Whole Grain",
 }
 NON_GRAINS = {"chickpea", "chickpeas", "garbanzo", "garbanzo beans", "lentil", "lentils", "soybean", "soybeans"}
 
@@ -56,8 +58,14 @@ def standardize_functions(value):
 
 
 def standardize_grains(value):
-    return ", ".join(part.strip() for part in (value or "").split(",")
-                     if part.strip() and part.strip().casefold() not in NON_GRAINS)
+    values, seen = [], set()
+    for part in (value or "").split(","):
+        grain = part.strip()
+        key = grain.casefold()
+        if key and key not in NON_GRAINS and key not in seen:
+            values.append(grain)
+            seen.add(key)
+    return ", ".join(values)
 
 
 def standardize_rows(rows):

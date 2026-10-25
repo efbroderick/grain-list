@@ -178,7 +178,7 @@ function initializeMap() {
 }
 
 function listingIdFromLocation() {
-  const route = window.location.pathname.match(/^\/organizations\/(grain-[a-f0-9]{16})\/?$/);
+  const route = window.location.pathname.match(/^\/organizations\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/);
   return route?.[1] || new URLSearchParams(window.location.search).get("organization") || "";
 }
 
@@ -364,7 +364,7 @@ function resultItem(organization) {
 }
 
 function organizationUrl(organization) {
-  return `/organizations/${encodeURIComponent(organization.id)}/`;
+  return `/organizations/${encodeURIComponent(organization.slug || organization.id)}/`;
 }
 
 function webLink(value) {
@@ -498,7 +498,7 @@ function render() {
 
 function focusLinkedOrganization() {
   if (!state.focusedOrganizationId) return;
-  const organization = state.organizations.find(item => item.id === state.focusedOrganizationId);
+  const organization = state.organizations.find(item => item.id === state.focusedOrganizationId || item.slug === state.focusedOrganizationId);
   if (!organization?.location) {
     state.focusedOrganizationId = "";
     render();
@@ -649,7 +649,7 @@ function bindEvents() {
   });
   window.addEventListener("popstate", () => {
     const id = listingIdFromLocation();
-    const organization = state.organizations.find(item => item.id === id);
+    const organization = state.organizations.find(item => item.id === id || item.slug === id);
     if (organization) showDetails(organization, false);
     else {
       state.selectedOrganization = null;
