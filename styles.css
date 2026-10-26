@@ -733,7 +733,7 @@ summary > span:last-child {
   width: 24px;
   height: 24px;
   display: block;
-  border: 3px solid rgba(255, 255, 255, 0.96);
+  border: 1.5px solid rgba(255, 255, 255, 0.96);
   border-radius: 50%;
   background: var(--marker-color);
   box-shadow:
@@ -753,7 +753,7 @@ summary > span:last-child {
   height: 100%;
   display: grid;
   place-items: center;
-  border: 3px solid rgba(255, 255, 255, 0.9);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
   border-radius: 50%;
   background: #344f72;
   color: white;
