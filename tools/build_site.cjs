@@ -144,7 +144,7 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   fs.rmSync(temporary, { recursive: true, force: true });
   fs.mkdirSync(temporary, { recursive: true });
   const mapTemplate = fs.readFileSync(path.join(root, "index.html"), "utf8").replaceAll(DEFAULT_ORIGIN, url.origin).replaceAll("__DATA_VERSION__", dataVersion);
-  for (const file of ["index.html", "app.js", "styles.css", "pages.css", "page.js", "submission.js", "install.js", "manifest.webmanifest", "site-config.js"]) {
+  for (const file of ["index.html", "app.js", "basemap.js", "styles.css", "pages.css", "page.js", "submission.js", "install.js", "manifest.webmanifest", "site-config.js"]) {
     if (file === "index.html") fs.writeFileSync(path.join(temporary, file), mapTemplate);
     else if (["app.js", "submission.js"].includes(file)) fs.writeFileSync(path.join(temporary, file), fs.readFileSync(path.join(root, file), "utf8").replaceAll("__DATA_VERSION__", dataVersion));
     else fs.copyFileSync(path.join(root, file), path.join(temporary, file));

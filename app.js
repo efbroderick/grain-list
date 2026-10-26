@@ -143,6 +143,7 @@ function initializeMap() {
     center: USA_VIEW.center,
     zoom: USA_VIEW.zoom,
     minZoom: 3,
+    maxZoom: 16,
     zoomControl: false,
     preferCanvas: true,
   });
@@ -155,7 +156,8 @@ function initializeMap() {
     maxZoom: 16,
     pane: "shadowPane",
   });
-  L.layerGroup([lightBase, lightLabels]).addTo(map);
+  const fallback = L.layerGroup([lightBase, lightLabels]);
+  window.GrainListBasemap.addTo(map, fallback);
   markerLayer = L.markerClusterGroup({
     chunkedLoading: true,
     showCoverageOnHover: false,

@@ -10,6 +10,7 @@ setup:
 test:
 	$(PYTHON) -m unittest discover -s tests
 	node --check app.js
+	node --check basemap.js
 	node --check install.js
 	node --check page.js
 	node --check submission.js

@@ -10,6 +10,12 @@ Every published organization appears on the map. When an exact address cannot
 be verified, the interface identifies the point as an approximate city, region,
 organization, or state location rather than presenting it as street-level data.
 
+The light-gray basemap uses OpenFreeMap vector tiles, rendered with MapLibre
+inside Leaflet. No map API key is required. `basemap.js` preserves the approved
+quiet colors and keeps the existing Esri raster map as a fallback if WebGL,
+the style service, or vector loading fails. Listings and filters do not wait
+for vector loading. Required provider attribution remains visible on the map.
+
 ## Run locally
 
 ```bash
@@ -24,7 +30,7 @@ Open `http://localhost:4173`.
 ## Project structure
 
 - `index.html`, `styles.css`, `app.js`: static web application
-- `atlas.css`: map and directory styling
+- `basemap.js`: vector basemap styling and raster fallback
 - `tools/build_site.cjs`: static organization pages, directory, form, and sitemap
 - `page.js`, `submission.js`, `pages.css`: profile and contribution pages
 - `data/organizations.json`: validated public directory data
