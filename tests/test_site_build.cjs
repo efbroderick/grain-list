@@ -44,7 +44,7 @@ test("every public organization has an HTML page and a crawlable directory/sitem
       assert.ok(script.includes(`/data/organizations.json?version=${version}`));
       assert.equal(script.includes("__DATA_VERSION__"), false);
     }
-    assert.ok(mapHtml.includes(`app.js?v=20261019-data-${version}`));
+    assert.ok(mapHtml.includes(`app.js?v=20261025-usability-${version}`));
     assert.equal(mapHtml.includes("atlas.css"), false);
     assert.equal(/(?:href|src)="\.\//.test(mapHtml), false);
     assert.equal(mapHtml.includes('id="verified-filter"'), false);

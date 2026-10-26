@@ -11,6 +11,7 @@ function boot() {
       value: "", hidden: false, disabled: false, handlers: {}, options: {},
       addEventListener(event, handler) { this.handlers[event] = handler; },
       querySelector() { return node(); },
+      querySelectorAll() { return []; },
       setAttribute(name, value) { this[name] = value; },
       showModal() { this.open = true; },
       close() { this.open = false; },

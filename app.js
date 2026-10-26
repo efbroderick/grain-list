@@ -60,6 +60,7 @@ let userMarker;
 const markersById = new Map();
 let lastFiltered = [];
 let toastTimer;
+let mobileSheet;
 
 function normalized(value) {
   return String(value || "")
@@ -129,10 +130,10 @@ function markerClass(organization) {
 
 function organizationIcon(organization) {
   return L.divIcon({
-    className: "",
+    className: "grain-marker-target",
     html: `<span class="grain-marker ${markerClass(organization)}"></span>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
     popupAnchor: [0, -14],
   });
 }
@@ -163,11 +164,12 @@ function initializeMap() {
     iconCreateFunction(cluster) {
       const count = cluster.getChildCount();
       const size = count < 10 ? "small" : count < 50 ? "medium" : "large";
-      const dimension = count < 10 ? 38 : count < 50 ? 46 : 54;
+      const dimension = count < 10 ? 32 : count < 50 ? 38 : 44;
       return L.divIcon({
-        className: "",
-        html: `<span class="grain-cluster grain-cluster-${size}"><strong>${count}</strong></span>`,
-        iconSize: [dimension, dimension],
+        className: "grain-cluster-target",
+        html: `<span class="grain-cluster grain-cluster-${size}" style="width:${dimension}px;height:${dimension}px"><strong>${count}</strong></span>`,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
       });
     },
   });
@@ -360,6 +362,7 @@ function resultItem(organization) {
     <p class="result-address">${escapeHtml(locationText)}</p>
     ${grainText ? `<p class="result-grains">${escapeHtml(grainText)}</p>` : ""}
   `;
+  button.querySelectorAll("p").forEach(paragraph => { paragraph.title = paragraph.textContent; });
   return button;
 }
 
@@ -481,9 +484,8 @@ function renderActiveFilters() {
 
 function renderViewportResults() {
   const visible = filteredOrganizations();
-  const mapped = visible.filter((item) => item.location).length;
-  elements.resultCount.textContent = pluralize(visible.length, "organization");
-  elements.mappedCount.textContent = `${mapped.toLocaleString()} mapped`;
+  elements.resultCount.textContent = `${pluralize(visible.length, "organization")} in this area`;
+  elements.mappedCount.textContent = "Updates as you move the map";
   renderResults(visible);
 }
 
@@ -517,7 +519,78 @@ function fitResults() {
   const locations = lastFiltered.filter((item) => item.location);
   if (!locations.length) return;
   const bounds = L.latLngBounds(locations.map((item) => [item.location.lat, item.location.lng]));
-  map.fitBounds(bounds, { padding: [38, 38], maxZoom: 12 });
+  mobileSheet?.collapse();
+  const bottomInset = mobileSheet?.inset() || 0;
+  const verticalPadding = Math.min(38, Math.max(4, (map.getSize().y - bottomInset - 20) / 2));
+  map.fitBounds(bounds, { paddingTopLeft: [38, verticalPadding], paddingBottomRight: [38, bottomInset + verticalPadding], maxZoom: 12 });
+}
+
+function sheetSizes(viewportHeight, topbarHeight) {
+  const maximum = Math.max(96, viewportHeight - topbarHeight - 52);
+  return { minimum: Math.min(144, maximum), collapsed: Math.min(338, maximum), maximum };
+}
+
+function initializeMobileSheet() {
+  const handle = document.querySelector("#sheet-handle");
+  const sidebar = document.querySelector("#sidebar");
+  const media = window.matchMedia("(max-width: 720px)");
+  let sizes;
+  let height;
+  let drag;
+  let dragEnded = 0;
+
+  function setHeight(value) {
+    height = Math.max(sizes.minimum, Math.min(sizes.maximum, value));
+    document.body.style.setProperty("--sheet-height", `${height}px`);
+    const expanded = height > sizes.collapsed + 24;
+    document.body.classList.toggle("sheet-expanded", expanded);
+    handle.setAttribute("aria-expanded", String(expanded));
+    handle.setAttribute("aria-label", expanded ? "Collapse organization list" : "Expand organization list");
+  }
+
+  function resize() {
+    const wasExpanded = sizes && height > sizes.collapsed + 24;
+    sizes = sheetSizes(window.innerHeight, document.querySelector(".topbar").getBoundingClientRect().height);
+    setHeight(wasExpanded ? sizes.maximum : height ?? sizes.collapsed);
+    drag = null;
+  }
+
+  handle.addEventListener("pointerdown", event => {
+    if (!media.matches || event.isPrimary === false || event.button !== 0) return;
+    drag = { y: event.clientY, height, moved: false };
+    handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", event => {
+    if (!drag) return;
+    if (Math.abs(event.clientY - drag.y) > 5) drag.moved = true;
+    if (drag.moved) setHeight(drag.height + drag.y - event.clientY);
+  });
+  handle.addEventListener("pointerup", () => {
+    if (drag?.moved) dragEnded = Date.now();
+    drag = null;
+  });
+  handle.addEventListener("pointercancel", () => {
+    if (drag) setHeight(drag.height);
+    drag = null;
+  });
+  handle.addEventListener("lostpointercapture", () => { drag = null; });
+  handle.addEventListener("click", event => {
+    if (event.detail > 0 && Date.now() - dragEnded < 350) return;
+    setHeight(height > sizes.collapsed + 24 ? sizes.collapsed : sizes.maximum);
+  });
+  handle.addEventListener("keydown", event => {
+    const values = { ArrowUp: height + 80, ArrowDown: height - 80, Home: sizes.minimum, End: sizes.maximum };
+    if (!(event.key in values)) return;
+    event.preventDefault();
+    setHeight(values[event.key]);
+  });
+  window.addEventListener("resize", resize);
+  media.addEventListener("change", resize);
+  resize();
+  return {
+    collapse() { setHeight(sizes.collapsed); },
+    inset() { return media.matches ? sidebar.getBoundingClientRect().height : 0; },
+  };
 }
 
 function locateUser() {
@@ -618,8 +691,7 @@ function bindEvents() {
   elements.filterOverlay.addEventListener("click", closeFilters);
   elements.showResults.addEventListener("click", () => {
     closeFilters();
-    document.body.dataset.mobileView = "list";
-    syncMobileViewButtons();
+    mobileSheet?.collapse();
   });
   elements.clearFiltersMobile.addEventListener("click", clearAllFilters);
   elements.fitResults.addEventListener("click", fitResults);
@@ -631,11 +703,12 @@ function bindEvents() {
     const organization = state.selectedOrganization;
     closeDetails();
     if (!organization?.location) return;
-    document.body.dataset.mobileView = "map";
-    syncMobileViewButtons();
+    mobileSheet?.collapse();
     map.invalidateSize();
     const zoom = organization.location.precision === "state" ? 5 : organization.location.precision === "place" ? 11 : 13;
     map.setView([organization.location.lat, organization.location.lng], zoom);
+    const bottomInset = mobileSheet?.inset() || 0;
+    if (bottomInset) map.panBy([0, bottomInset / 2], { animate: false });
     markersById.get(organization.id)?.openTooltip();
   });
   elements.detailShare.addEventListener("click", async () => {
@@ -670,21 +743,8 @@ function bindEvents() {
       if (error.name !== "AbortError") showToast("Could not share this view.");
     }
   });
-  document.querySelectorAll(".view-button").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.body.dataset.mobileView = button.dataset.view;
-      syncMobileViewButtons();
-      if (button.dataset.view === "map") window.setTimeout(() => map.invalidateSize(), 50);
-    });
-  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeFilters();
-  });
-}
-
-function syncMobileViewButtons() {
-  document.querySelectorAll(".view-button").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.view === document.body.dataset.mobileView);
   });
 }
 
@@ -716,6 +776,7 @@ async function start() {
       shell.hidden = false;
     }
     initializeMap();
+    mobileSheet = initializeMobileSheet();
     initializeControls();
     render();
     fitResults();

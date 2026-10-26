@@ -29,7 +29,7 @@ ${noindex ? '<meta name="robots" content="noindex,follow">' : ""}
 <meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(canonical)}">
 <meta property="og:image" content="${escape(new URL('/assets/app-icon-512.png', origin).href)}">
 <link rel="icon" href="/assets/favicon.png"><link rel="apple-touch-icon" href="/assets/app-icon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261025-outlines"><link rel="stylesheet" href="/pages.css?v=20261016">
+<link rel="stylesheet" href="/styles.css?v=20261025-usability"><link rel="stylesheet" href="/pages.css?v=20261016">
 ${structured ? `<script type="application/ld+json">${jsonScript(structured)}</script>` : ""}
 </head><body class="document-page">
 <header class="page-topbar"><a class="brand" href="/" aria-label="Grain List home"><span class="brand-mark"><img src="/assets/brand-mark.png" alt=""></span><strong>Grain List</strong></a>

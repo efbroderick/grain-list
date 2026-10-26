@@ -31,7 +31,7 @@
       rel="stylesheet"
       href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
     />
-    <link rel="stylesheet" href="/styles.css?v=20261025-outlines" />
+    <link rel="stylesheet" href="/styles.css?v=20261025-usability" />
   </head>
   <body data-mobile-view="map">
     <header class="topbar">
@@ -88,6 +88,7 @@
 
     <main class="app-shell">
       <aside id="sidebar" class="sidebar" aria-label="Grain organization directory">
+        <button id="sheet-handle" class="sheet-handle" type="button" aria-label="Expand organization list" aria-expanded="false" aria-controls="results-list"><span aria-hidden="true"></span></button>
         <section id="filter-panel" class="filter-panel" aria-label="Filters">
           <div class="filter-heading mobile-only">
             <div>
@@ -157,8 +158,8 @@
           <label class="sort-control">
             <span class="sr-only">Sort results</span>
             <select id="sort-select">
-              <option value="name">Sort: Name</option>
-              <option value="distance" disabled>Sort: Distance</option>
+              <option value="name">Name</option>
+              <option value="distance" disabled>Distance</option>
             </select>
           </label>
         </div>
@@ -169,9 +170,9 @@
       <section id="map-region" class="map-region" aria-label="Map of grain organizations">
         <div id="map"></div>
         <div class="map-actions">
-          <button id="fit-results-button" class="icon-button map-button" type="button" title="Fit map to results">
-            <i data-lucide="maximize" aria-hidden="true"></i>
-            <span class="sr-only">Fit map to results</span>
+          <button id="fit-results-button" class="button button-secondary map-button" type="button" title="Reset map to all filtered results">
+            <i data-lucide="rotate-ccw" aria-hidden="true"></i>
+            <span>Reset map</span>
           </button>
         </div>
         <details class="map-legend">
@@ -192,17 +193,6 @@
         </div>
       </section>
     </main>
-
-    <nav class="mobile-view-switcher mobile-only" aria-label="Choose map or list view">
-      <button class="view-button is-active" type="button" data-view="map">
-        <i data-lucide="map" aria-hidden="true"></i>
-        <span>Map</span>
-      </button>
-      <button class="view-button" type="button" data-view="list">
-        <i data-lucide="list" aria-hidden="true"></i>
-        <span>List</span>
-      </button>
-    </nav>
 
     <div id="filter-overlay" class="filter-overlay mobile-only"></div>
 
@@ -260,6 +250,6 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
     <script src="/site-config.js?v=20261007"></script>
-    <script type="module" src="/app.js?v=20261019-data-__DATA_VERSION__"></script>
+    <script type="module" src="/app.js?v=20261025-usability-__DATA_VERSION__"></script>
   </body>
 </html>
