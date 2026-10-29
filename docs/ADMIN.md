@@ -20,6 +20,11 @@ opens it after activation. Google sign-in and an explicit owner-email check
 restrict all server calls. Nothing uses a shared password or a credential in
 browser code. Public email suggestions remain unchanged.
 
+Admin Drafts and Admin Activity inherit the master spreadsheet's sharing
+permissions; their tab names do not make them private. Keep confidential notes
+and credentials out of these tabs. The publishing token belongs only in private
+Apps Script Properties, never in the spreadsheet or browser source.
+
 ## One-Time Activation
 
 Google authorization and a publishing credential must be supplied by the owner.
