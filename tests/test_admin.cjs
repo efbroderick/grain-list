@@ -4,6 +4,11 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {fixture,domain,data,hash,allowed,clone,root,applyPublication}=require('./helpers/admin_fixture.cjs');
 
+test('confirmation reads bypass stale SpreadsheetApp caches after REST writes',()=>{
+  const f=fixture();for(const sheet of f.tables.values())sheet.getDataRange=()=>{throw new Error('Cached native read must not be used');};
+  const draft=f.save({grains:['Rye']}),result=f.context.publishAdminDraft({draftId:draft.draftId,version:draft.version});assert.equal(result.status,'Queued');assert.equal(f.env.dispatches.length,1);assert.equal(f.context.activity_()[0].Status,'Queued');assert.equal(f.state().records[0].grains[0],'Rye');
+});
+
 test('admin uses Current Listings and preserves its existing public Record IDs',()=>{
   const f=fixture(),s=f.tables.get('Listings');
   s.rows=[['Name','Category','State','City','Function','Grains','Address','Phone','Email','Website','Grain List Profile','Sources','Record ID'],[data.name,data.category,data.state,data.city,data.functions.join('; '),data.grains.join('; '),data.address,data.phone,data.email,data.url,'https://grain-list.vercel.app/organizations/sample-farm/',data.sources.join('\n'),f.publicId]];

@@ -82,7 +82,8 @@
   async function save(forReview=false) {if(!field('name').value.trim())throw new Error('Give the draft an organization name.');if(forReview&&!form.reportValidity())return null;const draft=await rpc('saveAdminDraft',{...editing,data:readForm()});editing={...editing,...draft};dirty=false;const at=state.drafts.findIndex(d=>d.draftId===draft.draftId);if(at<0)state.drafts.push(draft);else state.drafts[at]=draft;$('#ga-draft-count').textContent=state.drafts.filter(d=>d.state!=='Published').length;return draft;}
   function differences(before,after) {return Object.keys(labels).filter(k=>JSON.stringify(before?.[k])!==JSON.stringify(after[k])).map(k=>`<div class="ga-change"><strong>${labels[k]}</strong><div>${before?`<p class="ga-was">${escape(plain(before[k]))}</p>`:''}<p class="ga-now">${escape(plain(after[k]))}</p></div></div>`).join('')||'<p class="ga-note">No field changes.</p>';}
   function review(draft) {
-    editing={...editing,...draft};const o=draft.data, before=state.records.find(r=>r.recordId===draft.recordId), live=Object.hasOwn(draft,'publishedBefore')?draft.publishedBefore:state.published.find(r=>r.id===draft.publicId);
+    editing={...editing,...draft};const o=draft.data, before=state.records.find(r=>r.recordId===draft.recordId), rawLive=Object.hasOwn(draft,'publishedBefore')?draft.publishedBefore:state.published.find(r=>r.id===draft.publicId);
+    const live=rawLive?{...rawLive,operationalStatus:'Active'}:null;
     const clears=live&&Object.keys(labels).some(k=>{const b=live[k],a=o[k];return (Array.isArray(b)?b.length:!!b)&&!(Array.isArray(a)?a.length:!!a);});
     const confirm=clears||o.operationalStatus==='Closed';
     const incomplete=!o.state||!o.sources.length||(o.operationalStatus!=='Closed'&&(!o.functions.length||!o.location||!o.locationChecked));

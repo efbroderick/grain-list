@@ -21,8 +21,12 @@ function lock_(fn) {var lock=LockService.getScriptLock();if(!lock.tryLock(15000)
 function book_() {return SpreadsheetApp.openById(ADMIN_SHEET_ID_);}
 function table_(name) {
   var sheet=book_().getSheetByName(name);if(!sheet)throw new Error('Initialize the admin connection first.');
-  var rows=sheet.getDataRange().getValues().map(function(row){return row.map(function(v){return v instanceof Date?v.toISOString():String(v==null?'':v);});});
-  var headers=rows.shift();
+  // Read through the same API used for writes; SpreadsheetApp caches can hide REST saves.
+  SpreadsheetApp.flush();
+  var range="'"+name.replace(/'/g,"''")+"'";
+  var rows=(sheets_('get','/values/'+encodeURIComponent(range)+'?valueRenderOption=UNFORMATTED_VALUE').values||[]).map(function(row){return row.map(function(v){return String(v==null?'':v);});});
+  var headers=rows.shift()||[];
+  if(!headers.length)throw new Error('The admin Sheet tab has no headers. Initialize its connection first.');
   if(name===ADMIN_TAB_)headers=headers.map(function(h){return h==='Website'?'URL':(h==='Sources'?'Source':h);});
   if(new Set(headers).size!==headers.length)throw new Error('The Sheet has duplicate column names.');
   return {sheet:sheet,headers:headers,rows:rows};
@@ -204,7 +208,7 @@ function getAdminPublicationStatus(requestId) {
     var payload=JSON.parse(item.Payload), published=live_(), matches=payload.upserts.every(function(o){var found=published.find(function(p){return p.id===o.id;});return found && publicRevision_(found)===publicRevision_(o);}) && payload.removals.every(function(id){return !published.some(function(p){return p.id===id;});});
     var runs=github_('actions/workflows/admin-publish.yml/runs?event=workflow_dispatch&per_page=30').workflow_runs||[], run=runs.find(function(r){return r.display_title==='Admin publication '+requestId;});
     var status=run && run.status==='completed' && run.conclusion!=='success'?'Publication failed':(matches && run && run.conclusion==='success'?'Published':(run && run.status==='completed'?'Deploying':(run? 'Validating':'Queued')));
-    if(item.Status==='Saved; not published' && !run)status='Saved; not published';
+    if(['Saving master','Saved; not published'].indexOf(item.Status)>=0 && !run)status='Saved; not published';
     updateActivity_(item._row,status,run?run.html_url:'');
     if(['Published','Publication failed','Saved; not published'].indexOf(status)>=0) {
       var active=PropertiesService.getScriptProperties().getProperty('ACTIVE_PUBLICATION');if(active && JSON.parse(active).id===requestId)PropertiesService.getScriptProperties().deleteProperty('ACTIVE_PUBLICATION');
