@@ -45,6 +45,11 @@ Open `http://localhost:4173`.
 
 ## Contact submissions
 
+Private additions and edits are available through the Sheet-connected admin.
+See [ADMIN.md](docs/ADMIN.md) for one-time owner authorization, activation,
+publishing, and recovery. `/admin/` remains inactive until its private Google
+web-app URL is configured. The public map and email suggestion flow are unchanged.
+
 Set `contactEmail` in `site-config.js` before deployment. Grain List does not
 store form data: it creates a prefilled email in the visitor's email client, so
 the visitor reviews and sends the message themselves.

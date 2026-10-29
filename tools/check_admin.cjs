@@ -1,0 +1,10 @@
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const root=path.join(__dirname,'../admin/apps-script');
+for(const file of ['Code.gs','Domain.gs'])new vm.Script(fs.readFileSync(path.join(root,file),'utf8'),{filename:file});
+const client=fs.readFileSync(path.join(root,'Client.html'),'utf8').replace(/^<script>\s*/,'').replace(/<\/script>\s*$/,'');
+new vm.Script(client,{filename:'Client.html'});
+const manifest=JSON.parse(fs.readFileSync(path.join(root,'appsscript.json')));
+if(manifest.webapp.access!=='MYSELF'||manifest.webapp.executeAs!=='USER_DEPLOYING')throw new Error('Admin deployment must remain private');
+console.log('Admin server and client syntax valid; deployment is owner-only.');

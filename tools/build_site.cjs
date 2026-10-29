@@ -161,6 +161,11 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   for (const redirect of redirects) write(redirect.source, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=${escape(redirect.destination)}"><link rel="canonical" href="${escape(new URL(redirect.destination, origin).href)}"><title>Listing moved | Grain List</title></head><body><a href="${escape(redirect.destination)}">Open organization</a></body></html>`);
   write("/organizations/", directory(organizations, origin));
   write("/add/", contribution(functions, origin));
+  const adminConfigPath = path.join(root, "config/admin.json");
+  const adminUrl = process.env.GRAIN_LIST_ADMIN_URL || (fs.existsSync(adminConfigPath) ? JSON.parse(fs.readFileSync(adminConfigPath, "utf8")).url : "") || "";
+  if (adminUrl && !/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(adminUrl)) throw new Error("GRAIN_LIST_ADMIN_URL must be the deployed private Google Apps Script URL");
+  write("/admin/", page({ title: "Admin | Grain List", description: "Private Grain List administration", route: "/admin/", origin, noindex: true,
+    content: `<main class="page-main contribution-main"><h1>Grain List Admin</h1><p class="page-status">${adminUrl ? 'Sign in with the Google account that owns the private admin.' : 'The private admin connection has not been activated yet.'}</p>${adminUrl ? `<a class="button button-primary" href="${escape(adminUrl)}">Open private admin</a>` : ''}<p><a href="/">Back to the map</a></p></main>` }));
   const routes = ["/", "/organizations/", ...organizations.map(organizationPath)];
   fs.writeFileSync(path.join(temporary, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escape(new URL(route, origin).href)}</loc></url>`).join("")}</urlset>`);
   fs.writeFileSync(path.join(temporary, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${new URL('/sitemap.xml', origin).href}\n`);

@@ -14,7 +14,7 @@ import requests
 
 from build_grain_list_data import (
     STATE_NAMES, build_payload, cache_matches_row, geocode_rows, public_identifier, read_cache,
-    split_values, write_cache,
+    split_values, write_cache, row_public_identifier, sheet_coordinates,
 )
 from validate_grain_list_data import validate_payload, valid_web_url
 from standardize_directory import standardize_functions, standardize_grains
@@ -146,7 +146,11 @@ def audit(rows, allowed, cache, source_url="", tab_id=None):
         if email and (not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or PLACEHOLDERS.search(email)):
             add("email_format", "Email", "Invalid or placeholder email.", "error")
         cached = cache.get(identifier, {})
-        if cached and not cache_matches_row(row, cached):
+        confirmed = sheet_coordinates(row)
+        if confirmed:
+            if confirmed["precision"] != "address":
+                add("approximate_coordinates", "Address", f"Map precision is {confirmed['precision']}; this is not a verified street location.")
+        elif cached and not cache_matches_row(row, cached):
             add("stale_coordinates", "Address", "Cached coordinates do not match this address/state/identity, or legacy metadata is incomplete; refresh them.", "error")
         elif "latitude" not in cached:
             add("missing_coordinates", "Address", "No cached map location; geocode before publication.", "error")
@@ -181,7 +185,7 @@ def audit(rows, allowed, cache, source_url="", tab_id=None):
 
 def changes_between(rows, published):
     old = {row["id"]: row for row in published.get("organizations", [])}
-    current = {public_identifier(row["Record ID"]): row for row in active_rows(rows)}
+    current = {row_public_identifier(row): row for row in active_rows(rows)}
     changes = []
     for public_id, row in current.items():
         previous = old.get(public_id)

@@ -14,6 +14,8 @@ test:
 	node --check install.js
 	node --check page.js
 	node --check submission.js
+	node --check tools/apply_admin_publication.cjs
+	node tools/check_admin.cjs
 	node --test tests/*.cjs
 
 validate:
@@ -27,6 +29,9 @@ geocode:
 
 build:
 	node tools/build_site.cjs
+
+admin:
+	node tools/build_admin.cjs
 
 serve: build
 	$(PYTHON) -m http.server 4173 --directory dist

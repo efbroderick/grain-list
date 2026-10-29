@@ -1,0 +1,55 @@
+name: Publish reviewed admin change
+run-name: Admin publication ${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Private admin publication request ID
+        required: true
+        type: string
+      publication:
+        description: Reviewed public record only; never include credentials or private notes
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: grain-list-admin-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements.txt
+      - name: Apply only the reviewed record
+        run: node tools/apply_admin_publication.cjs
+        env:
+          ADMIN_REQUEST_ID: ${{ inputs.request_id }}
+          ADMIN_PUBLICATION: ${{ inputs.publication }}
+      - run: node tools/update_organization_routes.cjs
+      - name: Validate and build before publishing
+        run: make test validate build PYTHON=python
+      - name: Publish checked data
+        env:
+          PUBLISH_ACTOR: ${{ github.actor }}
+          ADMIN_REQUEST_ID: ${{ inputs.request_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "$PUBLISH_ACTOR"
+          ACTOR_ID=$(gh api "users/$PUBLISH_ACTOR" --jq .id)
+          git config user.email "$ACTOR_ID+$PUBLISH_ACTOR@users.noreply.github.com"
+          git add data/organizations.json config/organization-routes.json vercel.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish reviewed admin change $ADMIN_REQUEST_ID"
+            git push origin HEAD:main
+          fi

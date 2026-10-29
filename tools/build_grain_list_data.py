@@ -5,8 +5,10 @@ import csv
 import hashlib
 import io
 import json
+import math
 import re
 import time
+import unicodedata
 from datetime import date
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -94,6 +96,40 @@ def public_identifier(record_id: str) -> str:
     """Return a stable browser key without publishing the internal record ID."""
     digest = hashlib.sha256(record_id.encode("utf-8")).hexdigest()[:16]
     return f"grain-{digest}"
+
+
+def row_public_identifier(row: dict) -> str:
+    """Keep the explicit Sheet-to-site binding when admin identity is initialized."""
+    identifier = row.get("Public ID", "").strip()
+    if identifier:
+        if not re.fullmatch(r"grain-[a-f0-9]{16}", identifier):
+            raise ValueError("Invalid Public ID in the publication source")
+        return identifier
+    return public_identifier(row["Record ID"])
+
+
+def sheet_coordinates(row: dict) -> dict | None:
+    """Use only the admin-confirmed point bound to this exact address identity."""
+    precision = row.get("Location Precision", "")
+    if precision not in {"address", "organization", "place", "state"}:
+        return None
+    def key(value):
+        plain = unicodedata.normalize("NFD", str(value or ""))
+        plain = "".join(c for c in plain if not unicodedata.combining(c)).lower()
+        return re.sub(r"[^a-z0-9]+", " ", plain).strip()
+    aliases = {"st": "street", "rd": "road", "ln": "lane", "hwy": "highway", "blvd": "boulevard", "ave": "avenue", "av": "avenue", "dr": "drive", "ct": "court", "cir": "circle", "pkwy": "parkway", "pl": "place", "ter": "terrace", "terr": "terrace", "trl": "trail", "rte": "route", "tpke": "turnpike", "expy": "expressway", "fwy": "freeway"}
+    address_key = " ".join(aliases.get(word, word) for word in key(row.get("Address")).split())
+    identity = [address_key, row.get("State", ""), key(row.get("Name")) if precision == "organization" else ""]
+    fingerprint = hashlib.sha256(json.dumps(identity, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    if fingerprint != row.get("Map Fingerprint"):
+        return None
+    try:
+        lat, lng = float(row["Latitude"]), float(row["Longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(lat) or not math.isfinite(lng) or not -90 <= lat <= 90 or not -180 <= lng <= 180:
+        return None
+    return {"lat": lat, "lng": lng, "precision": precision}
 
 
 def parse_address(address: str) -> dict | None:
@@ -379,6 +415,12 @@ def geocode_rows(rows: list[dict], cache: dict, timeout: int) -> dict:
     for row in rows:
         record_id = row["Record ID"]
         address = row.get("Address", "").strip()
+        confirmed = sheet_coordinates(row)
+        if confirmed:
+            cache[record_id] = {"address": address, "state": row.get("State", "").strip(),
+                                "name": row.get("Name", "").strip(), "latitude": confirmed["lat"],
+                                "longitude": confirmed["lng"], "precision": confirmed["precision"]}
+            continue
         cached = cache.get(record_id)
         if cached and not cache_matches_row(row, cached):
             reuse_formatting_match(row, cached)
@@ -406,19 +448,19 @@ def organization_payload(row: dict, cache: dict) -> dict:
     record_id = row["Record ID"]
     location = cache.get(record_id, {})
     parsed_address = parse_address(row.get("Address", ""))
-    coordinates = None
-    if cache_matches_row(row, location) and "latitude" in location and "longitude" in location:
+    coordinates = sheet_coordinates(row)
+    if coordinates is None and cache_matches_row(row, location) and "latitude" in location and "longitude" in location:
         coordinates = {
             "lat": location["latitude"],
             "lng": location["longitude"],
             "precision": location.get("precision", "address"),
         }
     return {
-        "id": public_identifier(record_id),
+        "id": row_public_identifier(row),
         "name": row.get("Name", ""),
         "category": row.get("Category", ""),
         "state": row.get("State", ""),
-        "city": parsed_address["city"] if parsed_address else "",
+        "city": row.get("City", "") or (parsed_address["city"] if parsed_address else ""),
         "functions": split_values(standardize_functions(row.get("Function", ""))),
         "grains": split_values(standardize_grains(row.get("Grains", ""))),
         "address": row.get("Address", ""),

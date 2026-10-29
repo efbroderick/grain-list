@@ -1,0 +1,12 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "STACKDRIVER",
+  "dependencies": { "enabledAdvancedServices": [{ "userSymbol": "Sheets", "serviceId": "sheets", "version": "v4" }] },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ],
+  "webapp": { "access": "MYSELF", "executeAs": "USER_DEPLOYING" }
+}

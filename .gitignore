@@ -10,3 +10,5 @@ credentials/
 *service-account*.json
 dist/
 dist.tmp/
+.clasp.json
+.clasprc.json
