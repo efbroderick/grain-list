@@ -541,6 +541,11 @@
       "permanent": true
     },
     {
+      "source": "/organizations/grain-2059ceff66f08df5/",
+      "destination": "/organizations/slowbird-bread/",
+      "permanent": true
+    },
+    {
       "source": "/organizations/grain-206a7a23a180ab10/",
       "destination": "/organizations/pasta-sonoma/",
       "permanent": true
