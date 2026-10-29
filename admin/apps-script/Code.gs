@@ -49,7 +49,7 @@ function writeRecord_(table,recordId,fields) {
   var found=sheets_('post','/developerMetadata:search',{dataFilters:[{developerMetadataLookup:lookup}]}).matchedDeveloperMetadata||[];
   if(found.length>1)throw new Error('This record has duplicate row metadata. Resolve it before saving.');
   if(!found.length) {
-    var fresh=readRecords_().records.find(function(r){return r.recordId===recordId;});if(!fresh)throw new Error('The source row no longer exists.');
+    var fresh=readRecords_(null,recordId).records[0];if(!fresh)throw new Error('The source row no longer exists.');
     var created=sheets_('post',':batchUpdate',{requests:[{createDeveloperMetadata:{developerMetadata:{metadataKey:'grainListRecord',metadataValue:key,visibility:'DOCUMENT',location:{dimensionRange:{sheetId:table.sheet.getSheetId(),dimension:'ROWS',startIndex:fresh._row,endIndex:fresh._row+1}}}}}]});
     found=[{developerMetadata:created.replies[0].createDeveloperMetadata.developerMetadata}];
   }
@@ -68,13 +68,19 @@ function live_() {
   return payload.organizations;
 }
 function schema_() {return JSON.parse(HtmlService.createHtmlOutputFromFile('Schema').getContent());}
-function readRecords_() {
-  var table=table_(ADMIN_TAB_), seen={};
+function readRecords_(table,recordId) {
+  table=table||table_(ADMIN_TAB_);var seen={}, publicIds={};
   if(GrainAdminDomain.extraHeaders.some(function(h){return table.headers.indexOf(h)<0;}))throw new Error('Initialize the admin connection first.');
-  var records=sheetObjects_(table).filter(function(r){return r.Name;}).map(function(r){
+  var rows=sheetObjects_(table).filter(function(r){return r.Name;});
+  rows.forEach(function(r){
     if(!r['Record ID'] || seen[r['Record ID']])throw new Error('A source Record ID is missing or repeated. Repair it before editing.');seen[r['Record ID']]=true;
     var id=r['Public ID'] || GrainAdminDomain.publicId(r['Record ID'],hash_);
     if(!/^grain-[a-f0-9]{16}$/.test(id))throw new Error('A Public ID is invalid.');
+    if(publicIds[id])throw new Error('Two source rows use the same Public ID. Resolve the identity conflict first.');publicIds[id]=true;
+  });
+  // A draft only needs the selected record's expensive revision and map hashes.
+  var records=rows.filter(function(r){return !recordId||r['Record ID']===recordId;}).map(function(r){
+    var id=r['Public ID'] || GrainAdminDomain.publicId(r['Record ID'],hash_);
     var o={recordId:r['Record ID'],publicId:id,_row:r._row,status:r.Status||'Partial'};
     Object.keys(GrainAdminDomain.fields).forEach(function(k){o[k]=r[GrainAdminDomain.fields[k]]||'';});
     ['functions','grains'].forEach(function(k){o[k]=GrainAdminDomain.list(o[k]);});
@@ -88,12 +94,12 @@ function readRecords_() {
   var ids=records.map(function(r){return r.publicId;});if(new Set(ids).size!==ids.length)throw new Error('Two source rows use the same Public ID. Resolve the identity conflict first.');
   return {table:table,records:records};
 }
-function drafts_() {return sheetObjects_(table_(DRAFT_TAB_)).map(function(r){return {draftId:r['Draft ID'],version:Number(r.Version),recordId:r['Record ID'],publicId:r['Public ID'],baseRevision:r['Base Revision'],data:JSON.parse(r.Data),updatedAt:r['Updated At'],state:r.State,liveRevision:r['Live Revision'],_row:r._row};});}
+function drafts_(table) {return sheetObjects_(table||table_(DRAFT_TAB_)).map(function(r){return {draftId:r['Draft ID'],version:Number(r.Version),recordId:r['Record ID'],publicId:r['Public ID'],baseRevision:r['Base Revision'],data:JSON.parse(r.Data),updatedAt:r['Updated At'],state:r.State,liveRevision:r['Live Revision'],_row:r._row};});}
 function doGet() {owner_();return HtmlService.createTemplateFromFile('Index').evaluate().setTitle('Grain List Admin').addMetaTag('viewport','width=device-width, initial-scale=1');}
 function getAdminState() {
   var email=owner_(), table=table_(ADMIN_TAB_);
   if(GrainAdminDomain.extraHeaders.some(function(h){return table.headers.indexOf(h)<0;}) || !book_().getSheetByName(DRAFT_TAB_) || !book_().getSheetByName(ACTIVITY_TAB_))return {needsSetup:true,email:email};
-  var records=readRecords_().records, published=live_();
+  var records=readRecords_(table).records, published=live_();
   return {email:email,records:records,drafts:drafts_(),published:published,unlinked:published.filter(function(o){return !records.some(function(r){return r.publicId===o.id;});}),functions:schema_().allowed_functions,states:GrainAdminDomain.states,sheetUrl:'https://docs.google.com/spreadsheets/d/'+ADMIN_SHEET_ID_+'/edit#gid='+table.sheet.getSheetId(),activity:activity_().slice(-20).reverse().map(function(a){delete a.Payload;return a;})};
 }
 function initializeAdmin() {
@@ -136,15 +142,22 @@ function initializeAdmin() {
 }
 function saveAdminDraft(request) {
   owner_();return lock_(function(){
-    var current=readRecords_(), input=request||{}, data=GrainAdminDomain.normalize(input.data,schema_().allowed_functions,true), draftList=drafts_();
+    var input=request||{}, current=input.recordId?readRecords_(null,input.recordId):{records:[]}, data=GrainAdminDomain.normalize(input.data,schema_().allowed_functions,true), table=table_(DRAFT_TAB_), draftList=drafts_(table);
     var prior=draftList.find(function(d){return d.draftId===input.draftId;}), row=current.records.find(function(r){return r.recordId===input.recordId;});
     if(input.recordId && !row && !prior)throw new Error('This source record no longer exists. Reload the directory.');
-    if(prior && prior.version!==input.version)throw new Error('This draft changed in another tab. Reload it before saving.');
     if(row && row.revision!==input.baseRevision)throw new Error('The Google Sheet changed since you opened this record. Reload before saving.');
+    if(input.draftId && !/^[a-f0-9-]{36}$/.test(input.draftId))throw new Error('Invalid draft identity.');
+    if(prior && prior.version!==input.version) {
+      // Repeating the same acknowledged-or-lost save must not create a second draft.
+      if(prior.state==='Draft' && prior.version===Number(input.version||0)+1 && prior.baseRevision===(input.baseRevision||'') && JSON.stringify(prior.data)===JSON.stringify(data)) {
+        prior.publishedBefore=live_().find(function(o){return o.id===prior.publicId;})||null;return prior;
+      }
+      throw new Error('This draft changed in another tab. Reload it before saving.');
+    }
     var id=prior?prior.recordId:(row?row.recordId:'org-'+Utilities.getUuid()), publicId=prior?prior.publicId:(row?row.publicId:GrainAdminDomain.publicId(id,hash_));
     var publishedBefore=live_().find(function(o){return o.id===publicId;})||null;
-    var draft={draftId:prior?prior.draftId:Utilities.getUuid(),version:prior?prior.version+1:1,recordId:id,publicId:publicId,baseRevision:row?row.revision:'',data:data,updatedAt:new Date().toISOString(),state:'Draft',liveRevision:publishedBefore?publicRevision_(publishedBefore):'new'};
-    var values=[draft.draftId,draft.version,id,publicId,draft.baseRevision,JSON.stringify(data),draft.updatedAt,draft.state,draft.liveRevision], table=table_(DRAFT_TAB_);
+    var draft={draftId:prior?prior.draftId:(input.draftId||Utilities.getUuid()),version:prior?prior.version+1:1,recordId:id,publicId:publicId,baseRevision:row?row.revision:'',data:data,updatedAt:new Date().toISOString(),state:'Draft',liveRevision:publishedBefore?publicRevision_(publishedBefore):'new'};
+    var values=[draft.draftId,draft.version,id,publicId,draft.baseRevision,JSON.stringify(data),draft.updatedAt,draft.state,draft.liveRevision];
     if(prior)writeCells_(table.sheet,values.map(function(v,i){return {row:prior._row,col:i,value:v};}));else append_(table,values);
     draft.publishedBefore=publishedBefore;return draft;
   });
@@ -156,11 +169,11 @@ function writeOrganization_(draft,current) {
   if(!row && table.headers.indexOf('Grain List Profile')>=0)fields['Grain List Profile']=origin_()+'/organizations/'+draft.publicId+'/';
   if(row) {
     // Re-resolve the ID immediately before writing; never trust a client row number.
-    var fresh=readRecords_().records.find(function(r){return r.recordId===draft.recordId;});
+    var fresh=readRecords_(null,draft.recordId).records[0];
     if(!fresh || fresh.revision!==draft.baseRevision)throw new Error('The Sheet changed before save. Reload this draft.');
     writeRecord_(table,draft.recordId,fields);
   } else { fields.Status='Partial';append_(table,table.headers.map(function(h){return fields[h]===undefined?'':fields[h];})); }
-  var saved=readRecords_().records.find(function(r){return r.recordId===draft.recordId;});
+  var saved=readRecords_(null,draft.recordId).records[0];
   if(!saved || GrainAdminDomain.revision(saved,hash_)!==GrainAdminDomain.revision(o,hash_))throw new Error('Could not confirm the Sheet save. Reload before retrying; publication has not started.');
   return saved;
 }
@@ -196,9 +209,9 @@ function publishAdminDraft(request) {
     var audit=activity_().find(function(a){return a['Request ID']===requestId;});updateActivity_(audit._row,'Saved; not published','');
     PropertiesService.getScriptProperties().setProperty('ACTIVE_PUBLICATION',JSON.stringify({id:requestId,time:Date.now()}));
     try {github_('actions/workflows/admin-publish.yml/dispatches','post',{ref:'main',inputs:{request_id:requestId,publication:JSON.stringify(payload)}});}
-    catch(error){PropertiesService.getScriptProperties().deleteProperty('ACTIVE_PUBLICATION');return {requestId:requestId,status:'Saved; not published',message:error.message,draft:draft};}
+    catch(error){PropertiesService.getScriptProperties().deleteProperty('ACTIVE_PUBLICATION');return {requestId:requestId,status:'Saved; not published',message:error.message,draft:draft,record:saved};}
     updateActivity_(audit._row,'Queued','');
-    return {requestId:requestId,status:'Queued',draft:draft};
+    return {requestId:requestId,status:'Queued',draft:draft,record:saved};
   });
 }
 function getAdminPublicationStatus(requestId) {
@@ -214,7 +227,7 @@ function getAdminPublicationStatus(requestId) {
       var active=PropertiesService.getScriptProperties().getProperty('ACTIVE_PUBLICATION');if(active && JSON.parse(active).id===requestId)PropertiesService.getScriptProperties().deleteProperty('ACTIVE_PUBLICATION');
       if(status==='Published') {var draft=drafts_().find(function(d){return d.recordId===item['Record ID'] && (payload.removals.indexOf(d.publicId)>=0?d.data.operationalStatus==='Closed':GrainAdminDomain.revision(GrainAdminDomain.toPublic(d.data,d.publicId),hash_)===GrainAdminDomain.revision(payload.upserts[0]||{},hash_));});if(draft){var t=table_(DRAFT_TAB_);writeCells_(t.sheet,[{row:draft._row,col:t.headers.indexOf('State'),value:'Published'}]);}}
     }
-    return {requestId:requestId,status:status,workflowUrl:run?run.html_url:'',sheetSaved:true};
+    return {requestId:requestId,status:status,workflowUrl:run?run.html_url:'',sheetSaved:true,recordId:item['Record ID'],publicId:item['Public ID'],published:status==='Published'?(published.find(function(o){return o.id===item['Public ID'];})||null):null};
   });
 }
 function lookupAdminAddress(input) {

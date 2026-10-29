@@ -9,7 +9,8 @@
   const plain=v=>Array.isArray(v)?v.join('; '):v&&typeof v==='object'?`${v.lat}, ${v.lng} (${v.precision})`:String(v||'Not recorded');
   const http=v=>{try{return ['https:','http:'].includes(new URL(v).protocol);}catch{return false;}};
   const labels={name:'Name',category:'Category',state:'State',city:'City / region',functions:'Functions',grains:'Grains',address:'Address',phone:'Phone',email:'Email',url:'Website',sources:'Sources',location:'Map location',operationalStatus:'Operating status'};
-  let state, page=0, editing=null, dirty=false, currentView='listings', map, marker, busy=false;
+  let state, page=0, editing=null, dirty=false, currentView='listings', map, marker, editorSession=0, viewRevision=0;
+  const operations=new Set(), saves=new Map();
   let matches=[], polling=null, pollCount=0;
   function rpc(name,...args) {
     return new Promise((resolve,reject)=>{
@@ -18,15 +19,29 @@
     });
   }
   function message(text,error=false) {$('#ga-error').hidden=!error||!text;$('#ga-error').textContent=error?text:'';$('#ga-notice').hidden=error||!text;$('#ga-notice').textContent=error?'':text;}
-  async function action(fn,status) {
-    if(busy)return;busy=true;root.setAttribute('aria-busy','true');const disabled=new Map(all('button,input,select,textarea').map(el=>[el,el.disabled]));disabled.forEach((_,el)=>el.disabled=true);if(status)message(status);
-    try{return await fn();}catch(error){message(error.message,true);return null;}finally{disabled.forEach((value,el)=>{if(el.isConnected)el.disabled=value;});busy=false;root.removeAttribute('aria-busy');if(state?.records&&currentView==='listings')renderList();}
+  async function action(fn,status,key='load') {
+    if(operations.has(key))return;operations.add(key);if(status)message(status);
+    try{return await fn();}catch(error){message(error.message,true);return null;}finally{operations.delete(key);updateSaveControls();}
   }
+  function updateSaveControls() {
+    const pending=editing&&saves.get(editing.draftId)?.status==='saving';
+    $('#ga-save').disabled=!!pending;$('#ga-review-button').disabled=!!pending;
+    $('#ga-find-location').disabled=operations.has('location:'+editorSession);
+    if($('#ga-publish'))$('#ga-publish').disabled=$('#ga-publish').dataset.invalid==='true'||operations.has('publish:'+editing?.draftId);
+  }
+  function renderWork() {
+    const values=[...saves.values()],jobs=[...values.filter(j=>j.status!=='saved'),...values.filter(j=>j.status==='saved').slice(-3)];$('#ga-work').hidden=!jobs.length;
+    $('#ga-work').innerHTML=jobs.map(job=>`<div><span>${escape(job.payload.data.name)}: ${job.status==='saving'?'Saving draft…':job.status==='failed'?'Save failed: '+escape(job.error):'Draft saved'}</span>${job.status==='failed'?`<button type="button" class="ga-link" data-retry="${escape(job.payload.draftId)}">Retry save</button>`:job.status==='saved'?`<button type="button" class="ga-link" data-review="${escape(job.payload.draftId)}">Review draft</button>`:''}</div>`).join('');
+    updateSaveControls();
+  }
+  function safelySaving() {const job=editing&&saves.get(editing.draftId);return job?.status==='saving'&&JSON.stringify(readForm())===JSON.stringify(job.payload.data);}
+  function upsertDraft(draft) {const at=state.drafts.findIndex(d=>d.draftId===draft.draftId);if(at<0)state.drafts.push(draft);else state.drafts[at]=draft;$('#ga-draft-count').textContent=state.drafts.filter(d=>d.state!=='Published').length;if(currentView==='drafts')renderDrafts();}
+  function upsertRecord(record) {const at=state.records.findIndex(r=>r.recordId===record.recordId);if(at<0)state.records.push(record);else state.records[at]=record;$('#ga-footer-count').textContent=`${state.records.length} source records`;if(currentView==='listings')renderList();}
   function go(view,force=false) {
-    if(dirty&&!force&&view!=='editor'&&!window.confirm('Discard unsaved form changes?'))return;
+    if(dirty&&!force&&view!=='editor'&&!safelySaving()&&!window.confirm('Discard unsaved form changes?'))return;
     if(view!=='editor')dirty=false;
     for(const name of ['setup','listings','editor','review','drafts','activity'])$(`#ga-${name}`).hidden=name!==view;
-    all('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===view)));currentView=view;
+    all('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===view)));currentView=view;viewRevision++;
     if(view==='listings')renderList();if(view==='drafts')renderDrafts();if(view==='activity')renderActivity();icons();
   }
   async function load(view='listings') {
@@ -50,16 +65,19 @@
     $('#ga-page-label').textContent=rows.length?`${page*8+1}-${Math.min(page*8+8,rows.length)} of ${rows.length} records`:'0 records';$('#ga-previous').disabled=!page;$('#ga-next').disabled=(page+1)*8>=rows.length;icons();
   }
   function edit(recordId,draftId) {
-    if(dirty&&!window.confirm('Discard unsaved form changes?'))return;
+    if(dirty&&!safelySaving()&&!window.confirm('Discard unsaved form changes?'))return;
+    const pending=[...saves.values()].find(job=>job.status==='saving'&&(job.payload.draftId===draftId||(recordId&&job.payload.recordId===recordId)));
+    if(pending){message('This organization’s draft is still saving. Other organizations are available to edit.');return;}
     const draft=state.drafts.find(d=>d.draftId===draftId), source=state.records.find(r=>r.recordId===(draft?.recordId||recordId));
     const o=draft?.data||source||{functions:[],grains:[],sources:[],location:null};
-    editing={draftId:draft?.draftId||'',version:draft?.version||0,recordId:source?.recordId||draft?.recordId||'',baseRevision:draft?.baseRevision||source?.revision||'',publicId:draft?.publicId||source?.publicId||''};
+    editorSession++;
+    editing={draftId:draft?.draftId||crypto.randomUUID(),version:draft?.version||0,recordId:source?.recordId||draft?.recordId||'',baseRevision:draft?.baseRevision||source?.revision||'',publicId:draft?.publicId||source?.publicId||''};
     form.reset();for(const n of ['name','category','state','url','address','city','phone','email'])field(n).value=o[n]||'';
     field('operationalStatus').value=o.operationalStatus||'Active';field('grains').value=o.grains.join('\n');field('sources').value=o.sources.join('\n');
     all('input[name="functions"]').forEach(c=>c.checked=o.functions.includes(c.value));updateFunctionLabel();$('#ga-function-menu').open=false;
     field('lat').value=o.location?.lat??'';field('lng').value=o.location?.lng??'';field('precision').value=o.location?.precision||'place';field('locationChecked').checked=o.locationChecked===true;
     $('#ga-editor-title').textContent=source?'Edit organization':'Add organization';$('#ga-editor-subtitle').textContent=source?.name||'New listing';$('#ga-location-matches').innerHTML='';
-    dirty=false;message('');go('editor',true);initializeMap(o.location);updateMapStatus();
+    dirty=false;message('');go('editor',true);initializeMap(o.location);updateMapStatus();updateSaveControls();
   }
   function updateFunctionLabel() {const values=all('input[name="functions"]:checked').map(c=>c.value);$('#ga-function-summary').textContent=values.length?values.join(' · '):'Choose functions';}
   function initializeMap(location) {
@@ -67,7 +85,7 @@
     if(!map){map=L.map('ga-location-map',{center:[39.5,-98.35],zoom:4,minZoom:3,maxZoom:16});
       const raster=L.layerGroup([L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:16,attribution:'Tiles © Esri, OpenStreetMap contributors'})]);
       if(window.GrainListBasemap)window.GrainListBasemap.addTo(map,raster);else raster.addTo(map);
-      map.on('click',e=>{if(!busy)setPoint(e.latlng.lat,e.latlng.lng,true);});
+      map.on('click',e=>setPoint(e.latlng.lat,e.latlng.lng,true));
     }
     map.invalidateSize();if(marker){map.removeLayer(marker);marker=null;}
     if(location){setPoint(location.lat,location.lng,false);map.setView([location.lat,location.lng],location.precision==='state'?5:location.precision==='place'?10:14);}else map.setView([39.5,-98.35],4);
@@ -79,7 +97,22 @@
   }
   function updateMapStatus() {$('#ga-map-status').textContent=field('lat').value&&field('lng').value?`${Number(field('lat').value).toFixed(5)}, ${Number(field('lng').value).toFixed(5)}${field('locationChecked').checked?' · Confirmed':' · Needs confirmation'}`:'Place a pin or look up the address, then confirm the location.';}
   function readForm() {const o=Object.fromEntries(['name','category','state','url','address','city','phone','email','operationalStatus'].map(n=>[n,field(n).value.trim()]));return {...o,functions:all('input[name="functions"]:checked').map(c=>c.value),grains:list(field('grains').value),sources:field('sources').value.split(/[;\n]/).map(s=>s.trim()).filter(Boolean),location:field('lat').value!==''&&field('lng').value!==''?{lat:Number(field('lat').value),lng:Number(field('lng').value),precision:field('precision').value}:null,locationChecked:field('locationChecked').checked};}
-  async function save(forReview=false) {if(!field('name').value.trim())throw new Error('Give the draft an organization name.');if(forReview&&!form.reportValidity())return null;const draft=await rpc('saveAdminDraft',{...editing,data:readForm()});editing={...editing,...draft};dirty=false;const at=state.drafts.findIndex(d=>d.draftId===draft.draftId);if(at<0)state.drafts.push(draft);else state.drafts[at]=draft;$('#ga-draft-count').textContent=state.drafts.filter(d=>d.state!=='Published').length;return draft;}
+  async function save(forReview=false,retry=null) {
+    if(!retry&&!field('name').value.trim())throw new Error('Give the draft an organization name.');if(!retry&&forReview&&!form.reportValidity())return null;
+    const payload=retry?.payload||JSON.parse(JSON.stringify({...editing,data:readForm()}));
+    if(saves.get(payload.draftId)?.status==='saving')return null;
+    const session=retry?.session??editorSession, view=viewRevision;
+    const job={payload,session,status:'saving'};saves.set(payload.draftId,job);renderWork();
+    try {
+      const draft=await rpc('saveAdminDraft',payload);job.status='saved';upsertDraft(draft);
+      if(session===editorSession&&editing?.draftId===payload.draftId) {
+        const unchanged=JSON.stringify(readForm())===JSON.stringify(payload.data);editing={...editing,...draft};
+        if(unchanged){dirty=false;if(forReview&&view===viewRevision&&currentView==='editor')review(draft);}
+      }
+      return draft;
+    } catch(error){job.status='failed';job.error=error.message;return null;}
+    finally{renderWork();}
+  }
   function differences(before,after) {return Object.keys(labels).filter(k=>JSON.stringify(before?.[k])!==JSON.stringify(after[k])).map(k=>`<div class="ga-change"><strong>${labels[k]}</strong><div>${before?`<p class="ga-was">${escape(plain(before[k]))}</p>`:''}<p class="ga-now">${escape(plain(after[k]))}</p></div></div>`).join('')||'<p class="ga-note">No field changes.</p>';}
   function review(draft) {
     editing={...editing,...draft};const o=draft.data, before=state.records.find(r=>r.recordId===draft.recordId), rawLive=Object.hasOwn(draft,'publishedBefore')?draft.publishedBefore:state.published.find(r=>r.id===draft.publicId);
@@ -89,31 +122,47 @@
     const incomplete=!o.state||!o.sources.length||(o.operationalStatus!=='Closed'&&(!o.functions.length||!o.location||!o.locationChecked));
     $('#ga-review').innerHTML=`<button type="button" class="ga-link ga-back" data-draft="${escape(draft.draftId)}">${icon('arrow-left')}Back to editing</button><div class="ga-heading"><div><h1>Review changes</h1><p>${escape(o.name)}</p></div><span class="ga-sub">Draft saved in Google Sheet</span></div><div class="ga-review-layout"><section><h2>Changes to the master Sheet</h2>${differences(before,o)}<details class="ga-section"><summary>Changes visitors will see</summary>${differences(live,o)}</details>${confirm?'<label class="ga-location ga-warning"><input id="ga-confirm-removal" type="checkbox"><span>I reviewed the fields being cleared or the removal of this closed organization from the site.</span></label>':''}<button id="ga-publish" type="button" class="ga-button ga-primary" ${confirm?'disabled':''}>${icon('upload')}Save to Sheet & publish</button><p class="ga-note">The master Sheet saves first. The site updates only after validation and deployment succeed.</p></section><aside class="ga-public"><p class="ga-eyebrow">${escape(o.category||'Organization')} · ${escape(o.state)}</p><h2>${escape(o.name)}</h2><h3>Functions</h3><ul class="ga-tags">${o.functions.map(v=>`<li>${escape(v)}</li>`).join('')}</ul><h3>Grains</h3><ul class="ga-tags ga-grains">${o.grains.map(v=>`<li>${escape(v)}</li>`).join('')}</ul><h3>Contact</h3><p>${escape(o.address)}</p><p>${escape(o.phone)}</p><p>${escape(o.email)}</p>${http(o.url)?`<a href="${escape(o.url)}" target="_blank" rel="noopener noreferrer">Visit website</a>`:''}<h3>Sources</h3><p>${o.sources.length} source${o.sources.length===1?'':'s'}</p></aside></div>`;
     dirty=false;message(incomplete?'Complete the state, functions, supporting sources, and confirmed map location before publishing.':'');go('review',true);
-    if(incomplete)$('#ga-publish').disabled=true;
-    $('#ga-confirm-removal')?.addEventListener('change',e=>$('#ga-publish').disabled=incomplete||!e.target.checked);
+    $('#ga-publish').dataset.invalid=String(incomplete||!!confirm);updateSaveControls();
+    $('#ga-confirm-removal')?.addEventListener('change',e=>{$('#ga-publish').dataset.invalid=String(incomplete||!e.target.checked);updateSaveControls();});
   }
   function renderDrafts() {const drafts=state.drafts.filter(d=>d.state!=='Published');$('#ga-drafts').innerHTML=`<div class="ga-heading"><div><h1>Drafts</h1><p>Saved in the master Google Sheet's Admin Drafts tab</p></div></div>${drafts.length?drafts.map(d=>`<div class="ga-section"><button class="ga-name" data-review="${escape(d.draftId)}" type="button">${escape(d.data.name)}</button><span class="ga-sub">${escape(d.state)} · ${escape(d.updatedAt.slice(0,16).replace('T',' '))} UTC</span><button class="ga-link" data-draft="${escape(d.draftId)}" type="button">Edit draft</button></div>`).join(''):'<p class="ga-empty">No unpublished drafts.</p>'}`;}
   function renderActivity() {$('#ga-activity').innerHTML=`<div class="ga-heading"><div><h1>Activity</h1><p>Sheet saves and publication outcomes</p></div></div>${state.activity.length?state.activity.map(a=>`<div class="ga-section"><strong>${escape(a.Name)}</strong><span class="ga-sub">${escape(a['Saved At'])}</span><p data-status="${escape(a['Request ID'])}">${escape(a.Status)}</p><button class="ga-link" type="button" data-check="${escape(a['Request ID'])}">Check publication status</button>${http(a['Workflow URL'])?`<a href="${escape(a['Workflow URL'])}" target="_blank" rel="noopener noreferrer">View validation run</a>`:''}</div>`).join(''):'<p class="ga-empty">No admin publications yet.</p>'}`;}
   async function check(id,automatic=false) {const result=await rpc('getAdminPublicationStatus',id);const el=root.querySelector(`[data-status="${id}"]`);if(el)el.textContent=result.status;
-    if(result.status==='Published'){message('Published successfully. The live site now matches the saved Sheet record.');await load('activity');return;}
+    const audit=state.activity.find(a=>a['Request ID']===id);if(audit){audit.Status=result.status;audit['Workflow URL']=result.workflowUrl;}
+    if(result.status==='Published'){
+      state.published=state.published.filter(r=>r.id!==result.publicId);if(result.published)state.published.push(result.published);
+      state.drafts.forEach(d=>{if(d.recordId===result.recordId&&d.state==='Saved to master')d.state='Published';});
+      $('#ga-draft-count').textContent=state.drafts.filter(d=>d.state!=='Published').length;
+      if(currentView==='activity')renderActivity();if(currentView==='listings')renderList();if(currentView==='drafts')renderDrafts();
+      message('Published successfully. The live site now matches the saved Sheet record.');return;
+    }
     if(['Publication failed','Saved; not published'].includes(result.status)){message('The change is saved in the master Sheet, but is not published. Review Activity and retry from the draft.',true);return;}
-    if(automatic&&pollCount++<20)polling=setTimeout(()=>action(()=>check(id,true)),9000);else if(automatic)message('The Sheet is saved. Publication is still in progress; use Check publication status in Activity.');
+    if(automatic&&pollCount++<20)polling=setTimeout(()=>action(()=>check(id,true),null,'check:'+id),9000);else if(automatic)message('The Sheet is saved. Publication is still in progress; use Check publication status in Activity.');
   }
   all('[data-view]').forEach(b=>b.addEventListener('click',()=>{message('');go(b.dataset.view);}));
   $('#ga-initialize').addEventListener('click',()=>action(async()=>{await rpc('initializeAdmin');await load();message('The admin is connected to the master Google Sheet.');},'Initializing record identities and private tabs...'));
   $('#ga-add').addEventListener('click',()=>edit('',''));$('#ga-editor-back').addEventListener('click',()=>go('listings'));$('#ga-cancel').addEventListener('click',()=>go('listings'));
   $('#ga-search').addEventListener('input',()=>{page=0;renderList();});$('#ga-state').addEventListener('change',()=>{page=0;renderList();});$('#ga-previous').addEventListener('click',()=>{page--;renderList();});$('#ga-next').addEventListener('click',()=>{page++;renderList();});
   form.addEventListener('input',()=>dirty=true);form.addEventListener('change',e=>{dirty=true;if(e.target.name==='functions')updateFunctionLabel();if(['address','city','state','name','precision','lat','lng'].includes(e.target.name)){field('locationChecked').checked=false;if(['lat','lng'].includes(e.target.name)&&field('lat').value&&field('lng').value)setPoint(Number(field('lat').value),Number(field('lng').value),true);}updateMapStatus();});form.addEventListener('submit',e=>e.preventDefault());
-  $('#ga-save').addEventListener('click',()=>action(async()=>{const draft=await save();if(draft){go('drafts',true);message('Draft saved in Google Sheet. The master listing and website have not changed.');}},'Saving draft to Google Sheet...'));
-  $('#ga-review-button').addEventListener('click',()=>action(async()=>{const draft=await save(true);if(draft)review(draft);},'Saving draft and preparing review...'));
-  $('#ga-find-location').addEventListener('click',()=>action(async()=>{matches=await rpc('lookupAdminAddress',{address:field('address').value,state:field('state').value});$('#ga-location-matches').innerHTML=matches.length?matches.map((m,i)=>`<button type="button" class="ga-button" data-location="${i}">${escape(m.address)}</button>`).join(''):'<p class="ga-note">No address match. Place the pin manually and choose its precision.</p>';message('');},'Looking up the address with the US Census geocoder...'));
-  root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||busy)return;
-    if(b.dataset.edit)edit(b.dataset.edit,'');if(b.dataset.draft)edit('',b.dataset.draft);if(b.dataset.review)review(state.drafts.find(d=>d.draftId===b.dataset.review));
+  $('#ga-save').addEventListener('click',()=>action(()=>save(),null,'save:'+editing.draftId));
+  $('#ga-review-button').addEventListener('click',()=>action(()=>save(true),null,'save:'+editing.draftId));
+  $('#ga-find-location').addEventListener('click',()=>{const session=editorSession,input={address:field('address').value,state:field('state').value};action(async()=>{updateSaveControls();const found=await rpc('lookupAdminAddress',input);if(session!==editorSession||input.address!==field('address').value||input.state!==field('state').value)return;matches=found;$('#ga-location-matches').innerHTML=matches.length?matches.map((m,i)=>`<button type="button" class="ga-button" data-location="${i}">${escape(m.address)}</button>`).join(''):'<p class="ga-note">No address match. Place the pin manually and choose its precision.</p>';message('');},'Looking up the address with the US Census geocoder...','location:'+session);});
+  root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;
+    if(b.dataset.edit)edit(b.dataset.edit,'');if(b.dataset.draft)edit('',b.dataset.draft);if(b.dataset.review){if(!dirty||safelySaving()||window.confirm('Discard unsaved form changes?')){editorSession++;review(state.drafts.find(d=>d.draftId===b.dataset.review));}}
+    if(b.dataset.retry){const job=saves.get(b.dataset.retry);if(job)action(()=>save(false,job),null,'save:'+job.payload.draftId);}
     if(b.dataset.location!==undefined){const m=matches[Number(b.dataset.location)];if(m){setPoint(m.location.lat,m.location.lng,true);field('precision').value='address';map?.setView([m.location.lat,m.location.lng],15);}}
-    if(b.dataset.check)action(()=>check(b.dataset.check));
-    if(b.id==='ga-publish')action(async()=>{if(polling)clearTimeout(polling);const result=await rpc('publishAdminDraft',{draftId:editing.draftId,version:editing.version,confirmRemoval:$('#ga-confirm-removal')?.checked||false});editing={...editing,...result.draft};await load('activity');message(result.status==='Queued'?'Saved to the master Google Sheet. Publication queued; not live yet.':result.message||result.status,result.status!=='Queued');if(result.status==='Queued'){pollCount=0;polling=setTimeout(()=>action(()=>check(result.requestId,true)),9000);}},'Saving the master Sheet and requesting checked publication...');
+    if(b.dataset.check)action(()=>check(b.dataset.check),null,'check:'+b.dataset.check);
+    if(b.id==='ga-publish'){
+      const input={draftId:editing.draftId,version:editing.version,confirmRemoval:$('#ga-confirm-removal')?.checked||false},session=editorSession,view=viewRevision;
+      action(async()=>{updateSaveControls();const result=await rpc('publishAdminDraft',input);upsertDraft(result.draft);upsertRecord(result.record);
+        state.activity.unshift({'Request ID':result.requestId,'Record ID':result.draft.recordId,'Public ID':result.draft.publicId,Name:result.draft.data.name,'Saved At':new Date().toISOString(),Status:result.status});
+        if(session===editorSession&&view===viewRevision){editing={...editing,...result.draft};go('activity',true);}else if(currentView==='activity')renderActivity();
+        message(result.status==='Queued'?'Saved to the master Google Sheet. Publication queued; not live yet.':result.message||result.status,result.status!=='Queued');
+        if(result.status==='Queued'){if(polling)clearTimeout(polling);pollCount=0;polling=setTimeout(()=>action(()=>check(result.requestId,true),null,'check:'+result.requestId),9000);}
+      },'Saving the master Sheet and requesting checked publication...','publish:'+input.draftId);
+    }
   });
-  window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+  window.addEventListener('beforeunload',e=>{if(dirty||[...saves.values()].some(j=>j.status!=='saved')||[...operations].some(k=>k.startsWith('publish:'))){e.preventDefault();e.returnValue='';}});
   action(()=>load());icons();
 })();
 </script>

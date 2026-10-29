@@ -3,6 +3,23 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {fixture,domain,data,hash,allowed,clone,root,applyPublication}=require('./helpers/admin_fixture.cjs');
+test('admin browser script parses before deployment',()=>{const source=fs.readFileSync(path.join(root,'admin/apps-script/Client.html'),'utf8');assert.doesNotThrow(()=>new (require('node:vm').Script)(source.replace(/^<script>\s*/, '').replace(/<\/script>\s*$/, '')));});
+
+test('draft save hashes only its selected record and reads each source tab once',()=>{
+  const f=fixture(),sheet=f.tables.get('Listings'),r=f.state().records[0];
+  for(let i=1;i<768;i++){const row=[...sheet.rows[1]];row[f.headers.indexOf('Name')]='Farm '+i;row[f.headers.indexOf('Record ID')]='org-'+i;row[f.headers.indexOf('Public ID')]=domain.publicId('org-'+i,hash);sheet.rows.push(row);}
+  f.env.digests=0;f.env.reads=[];
+  f.context.saveAdminDraft({recordId:r.recordId,baseRevision:r.revision,data});
+  assert.ok(f.env.digests<15,`Expected targeted hashing, got ${f.env.digests}`);
+  assert.deepEqual(f.env.reads,['Listings','Admin Drafts']);
+  f.env.reads=[];f.state();assert.equal(f.env.reads.filter(n=>n==='Listings').length,1);
+});
+test('lost save responses can be retried without duplicate new organizations or draft versions',()=>{
+  const f=fixture(),input={draftId:'12345678-1234-4123-8123-123456789abc',version:0,recordId:'',baseRevision:'',data:{...data,name:'New farm'}};
+  const first=f.context.saveAdminDraft(input),retry=f.context.saveAdminDraft(input);
+  assert.equal(retry.recordId,first.recordId);assert.equal(retry.version,1);assert.equal(f.tables.get('Admin Drafts').rows.length,2);
+  assert.throws(()=>f.context.saveAdminDraft({...input,data:{...input.data,name:'Conflicting edit'}}),/another tab/);
+});
 
 test('confirmation reads bypass stale SpreadsheetApp caches after REST writes',()=>{
   const f=fixture();for(const sheet of f.tables.values())sheet.getDataRange=()=>{throw new Error('Cached native read must not be used');};

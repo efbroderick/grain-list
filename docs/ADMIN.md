@@ -123,6 +123,14 @@ app URL is not an access credential; Google still requires your account.
 7. Check Activity. Only **Published** means the deployed record was read back
    and matched the approved change after a successful workflow.
 
+Draft saves run in the background. You can search, navigate, and edit a different
+organization while a save or publication is running. The save-status strip shows
+pending work and a **Retry save** action after a connection failure. Retrying the
+same save preserves its draft identity rather than creating a duplicate.
+Changes typed after clicking Save remain unsaved until the next save. Keep the
+tab open until pending saves finish; closing it interrupts the browser's ability
+to confirm results. Background publication checks never replace an open form.
+
 A dispatch, test, or deployment failure leaves the Sheet save intact. Reopen
 the retained draft to retry; never add the organization again. Concurrent draft
 versions, changed source rows, and changed live listings require a fresh review.

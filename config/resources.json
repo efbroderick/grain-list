@@ -1,0 +1,41 @@
+{
+  "reviewed": "2026-10-28",
+  "sections": [
+    {
+      "id": "basics",
+      "title": "Get to know whole grains",
+      "icon": "wheat",
+      "resources": [
+        {"title": "What makes a grain whole?", "publisher": "Oldways Whole Grains Council", "url": "https://wholegrainscouncil.org/whole-grains-101/whats-whole-grain-refined-grain", "description": "An introduction to the bran, germ, and endosperm, and how whole and refined grains differ."},
+        {"title": "Explore grains A to Z", "publisher": "Oldways Whole Grains Council", "url": "https://wholegrainscouncil.org/whole-grains-101/whole-grains-z", "description": "Meet familiar and less familiar grains, with notes on their flavors, forms, and uses."},
+        {"title": "Read the label", "publisher": "Oldways Whole Grains Council", "url": "https://wholegrainscouncil.org/whole-grains-101/identifying-whole-grain-products", "description": "A guide to ingredient lists and identifying whole grain foods."}
+      ]
+    },
+    {
+      "id": "nutrition",
+      "title": "Nutrition & health",
+      "icon": "heart-pulse",
+      "resources": [
+        {"title": "Whole grains and health: the evidence", "publisher": "Harvard T.H. Chan School of Public Health - The Nutrition Source", "url": "https://nutritionsource.hsph.harvard.edu/what-should-you-eat/whole-grains/", "description": "An overview of fiber, nutrients, and research on whole grains and long-term health, with references to the underlying studies."}
+      ]
+    },
+    {
+      "id": "cooking",
+      "title": "Cook with whole grains",
+      "icon": "cooking-pot",
+      "resources": [
+        {"title": "Water ratios & cooking times", "publisher": "Oldways Whole Grains Council", "url": "https://wholegrainscouncil.org/recipes/cooking-whole-grains", "description": "A practical reference for cooking grains, from oats and quinoa to rye and wheat berries."},
+        {"title": "A simple starting point for grain bowls, salads & soups", "publisher": "Common Grain Alliance", "url": "https://www.commongrainalliance.org/recipe/basic-grains-recipe", "description": "A basic grain-cooking method and ideas for using cooked grains in everyday meals."}
+      ]
+    },
+    {
+      "id": "recipes",
+      "title": "Recipes & baking",
+      "icon": "book-open",
+      "resources": [
+        {"title": "Find a whole grain recipe", "publisher": "Oldways Whole Grains Council", "url": "https://wholegrainscouncil.org/recipes/search", "description": "Browse recipes by grain and meal, including breakfasts, salads, main dishes, and breads."},
+        {"title": "Whole grain baking recipes", "publisher": "King Arthur Baking", "url": "https://www.kingarthurbaking.com/recipes/collections/amazing-whole-grain-recipes", "description": "A collection of whole grain breads, muffins, pancakes, and other baking ideas."}
+      ]
+    }
+  ]
+}

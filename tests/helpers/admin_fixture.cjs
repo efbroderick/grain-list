@@ -23,14 +23,14 @@ function fixture(options={}) {
   const draftHeaders=['Draft ID','Version','Record ID','Public ID','Base Revision','Data','Updated At','State','Live Revision'];
   const activityHeaders=['Request ID','Record ID','Public ID','Name','Saved At','Status','Payload','Workflow URL','Previous Record'];
   addSheet('Admin Drafts',[draftHeaders]);addSheet('Admin Activity',[activityHeaders]);
-  const env={live:[clone(domain.toPublic(data,publicId,'Partial'))],runs:[],dispatches:[],metadata:[],writes:[],failDispatch:false,lockBusy:false};
+  const env={live:[clone(domain.toPublic(data,publicId,'Partial'))],runs:[],dispatches:[],metadata:[],writes:[],failDispatch:false,lockBusy:false,digests:0,reads:[]};
   const book={getSheetByName:name=>tables.get(name),insertSheet:name=>addSheet(name,[[]])};
   function reply(value,code=200){return {getResponseCode:()=>code,getContentText:()=>JSON.stringify(value)};}
   const context={console,Set,Map,JSON,Date,Math,Number,String,Object,Array,isFinite,
     Session:{getActiveUser:()=>({getEmail:()=>options.activeEmail===undefined?'owner@private.test':options.activeEmail}),getEffectiveUser:()=>({getEmail:()=> 'owner@private.test'})},
     PropertiesService:{getScriptProperties:()=>({getProperty:k=>properties.get(k)||null,setProperty:(k,v)=>properties.set(k,v),deleteProperty:k=>properties.delete(k)})},
     SpreadsheetApp:{openById:()=>book,flush(){}},ScriptApp:{getOAuthToken:()=> 'test-only-google-token'},
-    Utilities:{getUuid:()=>crypto.randomUUID(),DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},computeDigest:(_,s)=>[...crypto.createHash('sha256').update(s).digest()]},
+    Utilities:{getUuid:()=>crypto.randomUUID(),DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},computeDigest:(_,s)=>{env.digests++;return [...crypto.createHash('sha256').update(s).digest()];}},
     LockService:{getScriptLock:()=>({tryLock:()=>!env.lockBusy,releaseLock(){}})},
     HtmlService:{createHtmlOutputFromFile:()=>({getContent:()=>JSON.stringify({allowed_functions:allowed})}),createTemplateFromFile:()=>({evaluate:()=>({setTitle:()=>({addMetaTag:(name,value)=>({name,value})})})})},
     UrlFetchApp:{fetch(url,opts={}){
@@ -39,7 +39,7 @@ function fixture(options={}) {
       if(url.includes('api.github.com')){if(url.includes('/dispatches')){if(env.failDispatch)return reply({},403);env.dispatches.push(body);return reply({},204);}return reply({workflow_runs:env.runs});}
       if(url.includes('geocoding.geo.census.gov'))return reply({result:{addressMatches:[]}});
       if(!url.includes('sheets.googleapis.com'))throw new Error('Unexpected test network request');
-      if(url.includes('/values/') && (!opts.method || opts.method==='get')){const name=decodeURIComponent(url.split('/values/')[1].split('?')[0]).match(/^'(.+)'$/)[1].replace(/''/g,"'");return reply({values:tables.get(name).rows});}
+      if(url.includes('/values/') && (!opts.method || opts.method==='get')){const name=decodeURIComponent(url.split('/values/')[1].split('?')[0]).match(/^'(.+)'$/)[1].replace(/''/g,"'");env.reads.push(name);return reply({values:tables.get(name).rows});}
       if(url.endsWith('/developerMetadata:search'))return reply({matchedDeveloperMetadata:env.metadata.filter(m=>m.metadataValue===body.dataFilters[0].developerMetadataLookup.metadataValue).map(m=>({developerMetadata:m}))});
       if(url.endsWith('/values:batchGetByDataFilter')){const m=env.metadata.find(m=>m.metadataId===body.dataFilters[0].developerMetadataLookup.metadataId);return reply({valueRanges:m?[{valueRange:{values:[m.row]}}]:[]});}
       if(url.endsWith('/values:batchUpdateByDataFilter')){for(const d of body.data){const m=env.metadata.find(m=>m.metadataId===d.dataFilter.developerMetadataLookup.metadataId);d.values[0].forEach((v,i)=>{if(v!==null)m.row[i]=v;});}return reply({});}
