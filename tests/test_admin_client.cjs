@@ -7,13 +7,13 @@ const crypto=require('node:crypto');
 
 function client() {
   const nodes=new Map(),fields=new Map(),calls=[],pending=[];
-  const node=key=>{if(!nodes.has(key))nodes.set(key,{value:'',textContent:'',innerHTML:'',hidden:true,disabled:false,dataset:{},addEventListener(){},setAttribute(){}});return nodes.get(key);};
+  const node=key=>{if(!nodes.has(key))nodes.set(key,{value:'',textContent:'',innerHTML:'',hidden:true,disabled:false,dataset:{},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},setAttribute(){}});return nodes.get(key);};
   const field=name=>{if(!fields.has(name))fields.set(name,{value:'',checked:false});return fields.get(name);};
   const root={querySelector:s=>s==='#ga-publish'||s==='#ga-confirm-removal'?null:node(s),querySelectorAll:()=>[],addEventListener(){}};
   node('#ga-form').elements={namedItem:field};node('#ga-form').reportValidity=()=>true;
   const runner=(success,failure)=>new Proxy({}, {get(_,key){if(key==='withSuccessHandler')return fn=>runner(fn,failure);if(key==='withFailureHandler')return fn=>runner(success,fn);return (...args)=>{calls.push({method:key,args});pending.push({resolve:success,reject:failure});};}});
   const context={document:{querySelector:()=>root},window:{google:{script:{run:runner(()=>{},()=>{})}},addEventListener(){},confirm:()=>true},crypto,URL,console,setTimeout(){return 1;},clearTimeout(){}};
-  const source=fs.readFileSync(path.join(__dirname,'../admin/apps-script/Client.html'),'utf8').replace(/^<script>\s*/,'').replace(/<\/script>\s*$/,'').replace('action(()=>load());icons();',`window.test={save,check,go,readForm,getState:()=>state,getEditing:()=>editing,getDirty:()=>dirty,getView:()=>currentView,setContext:(value)=>{state=value.state||state;editing=value.editing;editorSession=value.session;currentView=value.view||'editor';viewRevision++;dirty=true;}};`);
+  const source=fs.readFileSync(path.join(__dirname,'../admin/apps-script/Client.html'),'utf8').replace(/^<script>\s*/,'').replace(/<\/script>\s*$/,'').replace('action(()=>load());icons();',`window.test={save,check,go,readForm,renderList,getState:()=>state,getEditing:()=>editing,getDirty:()=>dirty,getView:()=>currentView,setContext:(value)=>{state=value.state||state;editing=value.editing;editorSession=value.session;currentView=value.view||'editor';viewRevision++;dirty=true;}};`);
   vm.runInNewContext(source,context);
   const api=context.window.test,state={records:[],drafts:[],published:[],activity:[]};
   function open(id,session=1){field('name').value=id;field('operationalStatus').value='Active';api.setContext({state,editing:{draftId:id,version:0,recordId:'org-'+id,baseRevision:'base'},session});}
@@ -42,4 +42,30 @@ test('background publication completion updates status without a full reload or 
   const c=client();c.open('second',2);c.state.drafts.push({recordId:'org-first',state:'Saved to master'});const checking=c.api.check('request');
   c.pending[0].resolve({status:'Published',recordId:'org-first',publicId:'grain-first',published:{id:'grain-first',name:'First'}});await checking;
   assert.deepEqual(c.calls.map(c=>c.method),['getAdminPublicationStatus']);assert.equal(c.api.getView(),'editor');assert.equal(c.api.getDirty(),true);assert.equal(c.api.getEditing().draftId,'second');assert.equal(c.state.drafts[0].state,'Published');
+});
+
+function statusClient(){
+  const c=client();c.open('editor');
+  c.state.records=[['Posted Farm','CO','Active'],['Unposted Farm','CO','Active'],['Closed Farm','CA','Closed'],['Closed Posted Farm','CO','Closed']].map(([name,state,operationalStatus],i)=>({name,state,operationalStatus,recordId:'org-'+i,publicId:'public-'+i,city:'Denver',address:'',functions:['Grain Grower'],grains:['Rye']}));
+  c.state.published=[{id:'public-0'},{id:'public-3'}];return c;
+}
+test('admin status filter uses actual deployed presence independently of source operating status',()=>{
+  const c=statusClient();c.node('#ga-status').value='off-site';c.node('#ga-status').listeners.change();
+  let html=c.node('#ga-list-content').innerHTML;assert.match(html,/Unposted Farm/);assert.match(html,/Closed Farm/);assert.doesNotMatch(html,/Posted Farm/);assert.equal(c.node('#ga-total').textContent,'2 of 4 records match');
+  c.node('#ga-status').value='on-site';c.node('#ga-status').listeners.change();html=c.node('#ga-list-content').innerHTML;assert.match(html,/Posted Farm/);assert.match(html,/Closed Posted Farm/);assert.match(html,/Closed · On site/);assert.doesNotMatch(html,/Unposted Farm/);
+  c.node('#ga-status').value='closed';c.node('#ga-status').listeners.change();html=c.node('#ga-list-content').innerHTML;assert.match(html,/Closed Farm/);assert.match(html,/Closed Posted Farm/);assert.doesNotMatch(html,/Unposted Farm/);assert.equal(c.calls.length,0);
+});
+test('status filter combines with state and search, resets pagination and supports empty matches',()=>{
+  const c=statusClient();c.node('#ga-status').value='off-site';c.node('#ga-state').value='CO';c.node('#ga-search').value='RYE';c.node('#ga-status').listeners.change();
+  assert.equal(c.node('#ga-total').textContent,'1 of 4 records match');assert.match(c.node('#ga-list-content').innerHTML,/Unposted Farm/);
+  c.node('#ga-search').value='missing';c.node('#ga-search').listeners.input();assert.match(c.node('#ga-list-content').innerHTML,/No matching organizations/);assert.equal(c.node('#ga-page-label').textContent,'0 records');
+  c.node('#ga-state').value='';c.node('#ga-search').value='';c.node('#ga-status').value='';
+  for(let i=4;i<20;i++)c.state.records.push({...c.state.records[0],recordId:'org-'+i,publicId:'public-'+i,name:'Extra '+i});
+  c.api.renderList();c.node('#ga-next').listeners.click();assert.match(c.node('#ga-page-label').textContent,/^9-16/);
+  c.node('#ga-status').value='on-site';c.node('#ga-status').listeners.change();assert.equal(c.node('#ga-page-label').textContent,'1-2 of 2 records');assert.equal(c.node('#ga-previous').disabled,true);
+});
+test('publication completion refreshes filtered listings without clearing the chosen status',async()=>{
+  const c=statusClient();c.api.setContext({state:c.state,editing:null,session:0,view:'listings'});c.node('#ga-status').value='off-site';c.api.renderList();
+  const checking=c.api.check('request');c.pending[0].resolve({status:'Published',recordId:'org-1',publicId:'public-1',published:{id:'public-1',name:'Unposted Farm'}});await checking;
+  assert.equal(c.node('#ga-status').value,'off-site');assert.doesNotMatch(c.node('#ga-list-content').innerHTML,/Unposted Farm/);assert.equal(c.node('#ga-total').textContent,'1 of 4 records match');
 });

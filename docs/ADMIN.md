@@ -114,6 +114,10 @@ app URL is not an access credential; Google still requires your account.
 ## Normal Use
 
 1. Open `/admin/` and sign in with the deploying Google account.
+   Listings can be filtered by state, search text, and status. **On site** and
+   **Not on site** reflect presence in the deployed directory, not whether a
+   draft is saved or queued. **Closed** filters the source operating status;
+   a closed record can still be on site until its removal is published.
 2. Add an organization or open a source listing. Keep the complete Functions
    and Grains lists: these fields replace the prior lists after your review.
 3. Confirm the map point and its precision; include supporting source URLs.
