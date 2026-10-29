@@ -105,7 +105,8 @@ def row_public_identifier(row: dict) -> str:
         if not re.fullmatch(r"grain-[a-f0-9]{16}", identifier):
             raise ValueError("Invalid Public ID in the publication source")
         return identifier
-    return public_identifier(row["Record ID"])
+    raw = row["Record ID"]
+    return raw if re.fullmatch(r"grain-[a-f0-9]{16}", raw) else public_identifier(raw)
 
 
 def sheet_coordinates(row: dict) -> dict | None:
@@ -468,7 +469,7 @@ def organization_payload(row: dict, cache: dict) -> dict:
         "email": row.get("Email", ""),
         "url": row.get("URL", ""),
         "status": row.get("Status", ""),
-        "sources": [part.strip() for part in row.get("Source", "").split(";") if part.strip()],
+        "sources": [part.strip() for part in re.split(r"[;\n]", row.get("Source", "")) if part.strip()],
         "location": coordinates,
     }
 

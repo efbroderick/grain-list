@@ -20,7 +20,7 @@ from validate_grain_list_data import validate_payload, valid_web_url
 from standardize_directory import standardize_functions, standardize_grains
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SHEET = "https://docs.google.com/spreadsheets/d/1R1j385dUU2qMtzkSsUM5inT5tTyoTbQwI0vISf1Hav8/edit"
+DEFAULT_SHEET = "https://docs.google.com/spreadsheets/d/1zhNRetv5gNYuaQtlZ8hxsW7GBdX7VpMbSN9boXkuYT8/edit"
 REQUIRED = ["Record ID", "Name", "State", "Function", "Grains", "Address", "Phone", "Email", "URL", "Status", "Source", "Operational Status"]
 FIELD_MAP = {
     "Name": "name", "Category": "category", "State": "state", "Function": "functions",
@@ -36,13 +36,22 @@ def read_source(path):
     with path.open(newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
         headers = reader.fieldnames or []
+        current_listings = {"Website", "Sources", "Grain List Profile"}.issubset(headers)
+        if current_listings:
+            headers = [{"Website": "URL", "Sources": "Source"}.get(h, h) for h in headers]
+            for h in ("Status", "Operational Status"):
+                if h not in headers:
+                    headers.append(h)
         missing = set(REQUIRED) - set(headers)
         if missing or len(set(headers)) != len(headers):
             raise ValueError(f"Missing or duplicate headers. Missing: {', '.join(sorted(missing))}")
-        rows = [{key: str(value or "").strip() for key, value in row.items() if key is not None} for row in reader if any(row.values())]
+        rows = [{({"Website": "URL", "Sources": "Source"}.get(key, key) if current_listings else key): str(value or "").strip() for key, value in row.items() if key is not None} for row in reader if any(row.values())]
     if not rows:
         raise ValueError("The source contains no organizations; refusing an empty release.")
     for row in rows:
+        if current_listings:
+            row["Status"] = row.get("Status") or "Partial"
+            row["Operational Status"] = row.get("Operational Status") or "Active"
         row["Function"] = standardize_functions(row.get("Function", ""))
         row["Grains"] = standardize_grains(row.get("Grains", ""))
     return rows, headers
@@ -306,10 +315,10 @@ def main():
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--input", type=Path, help="Reviewed CSV downloaded from Google Sheets")
     source.add_argument("--sheet", help="Private Google Sheet URL (read-only download)")
-    parser.add_argument("--tab", default="Organizations")
+    parser.add_argument("--tab", default="Listings")
     parser.add_argument("--credentials", type=Path)
     parser.add_argument("--source-url", default=DEFAULT_SHEET)
-    parser.add_argument("--sheet-tab-id", type=int, default=37602485)
+    parser.add_argument("--sheet-tab-id", type=int, default=1175486555)
     parser.add_argument("--published", type=Path, default=ROOT / "data/organizations.json")
     parser.add_argument("--cache", type=Path, default=ROOT / ".cache/grain_list_geocode_cache.json")
     parser.add_argument("--report-dir", type=Path, default=ROOT / ".maintenance/latest")

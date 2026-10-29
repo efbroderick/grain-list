@@ -1,6 +1,7 @@
 # Review and Maintain Grain List
 
-Use the editable [publication Google Sheet](https://docs.google.com/spreadsheets/d/1R1j385dUU2qMtzkSsUM5inT5tTyoTbQwI0vISf1Hav8/edit).
+Use the editable [current master Google Sheet](https://docs.google.com/spreadsheets/d/1zhNRetv5gNYuaQtlZ8hxsW7GBdX7VpMbSN9boXkuYT8/edit).
+The Listings tab is authoritative; the older Publication Source is not used.
 Keep each Record ID unchanged. Edit Function and Grains to the complete lists
 you want published. A refresh replaces those lists exactly. Set Operational
 Status to Closed to retain a source record while excluding it from publication.
@@ -29,7 +30,7 @@ map points only when the location's state and identity still match; a real
 address or state change requires new geocoding.
 
 In Google Sheets choose File > Download > Comma-separated values (.csv) on the
-Organizations tab. In the grain-list project run:
+Listings tab. In the grain-list project run:
 
 ```bash
 python tools/maintain_directory.py --input /path/to/download.csv
@@ -58,8 +59,8 @@ that account, or use CSV download instead. Credentials must never be committed.
 ```bash
 python -m pip install -r requirements-maintenance.txt
 python tools/maintain_directory.py \
-  --sheet "https://docs.google.com/spreadsheets/d/1R1j385dUU2qMtzkSsUM5inT5tTyoTbQwI0vISf1Hav8/edit" \
-  --tab Organizations --credentials /path/to/google-service-account.json
+  --sheet "https://docs.google.com/spreadsheets/d/1zhNRetv5gNYuaQtlZ8hxsW7GBdX7VpMbSN9boXkuYT8/edit" \
+  --tab Listings --credentials /path/to/google-service-account.json
 ```
 
 The script reads values only and never writes to the Sheet. Credentials are

@@ -2,15 +2,16 @@
 
 ## What Is Implemented
 
-The private admin reads the existing Organizations tab in the publication
-Google Sheet. It is not connected to the separate clean export/snapshot.
+The private admin reads the **Listings** tab in the current editable master:
+[Grain List - Current Listings - 2026-10-26](https://docs.google.com/spreadsheets/d/1zhNRetv5gNYuaQtlZ8hxsW7GBdX7VpMbSN9boXkuYT8/edit).
+This is the authoritative list. Do not use the older Publication Source Sheet.
 
 - Add and edit organizations, Functions, Grains, contacts, and source URLs.
 - Save durable drafts in the same spreadsheet's **Admin Drafts** tab.
 - Find an address using the free Census geocoder, or place the map pin manually.
 - Compare the proposed master-Sheet change and the change visitors will see.
 - Explicitly confirm cleared fields and closures.
-- Save approved changes to **Organizations**, then request checked publication.
+- Save approved changes to **Listings**, then request checked publication.
 - Show saved, queued, validating, deploying, failed, and verified-live states.
 - Retain before-values in **Admin Activity** and public changes in Git history.
 
@@ -26,34 +27,31 @@ The repository contains no credentials. Do not paste tokens into chat or commit
 them. No LLM, Tavily, paid database, or paid email service is required. Apps Script
 quotas apply. The GitHub workflow uses standard public-repository runners.
 
-### 1. Authorize The Installer
+### 1. Open The Browser Editor
 
-In Terminal:
+Use [Google Apps Script](https://script.google.com/home) in the account that owns
+the current master Sheet. Create a project named **Grain List Admin**, or reopen
+the existing project rather than creating another one. A standalone project is
+supported: the server explicitly opens the current master by its ID.
 
-```bash
-cd /Users/efb/Documents/grain-list
-npx --yes @google/clasp login
-```
+Clasp is optional and not needed for this setup. Do not approve its broader
+Google permissions just to install this admin.
 
-Choose the Google account that owns the master Sheet and review Google's consent
-screen yourself. If prompted, enable the Apps Script API at
-https://script.google.com/home/usersettings before continuing.
+### 2. Add The Checked-In Files
 
-### 2. Upload The Private Admin
+In the editor add or replace these files from `admin/apps-script/`:
+`Code.gs`, `Domain.gs`, `Index.html`, `Client.html`, `Styles.html`, `Schema.html`.
+For HTML files, enter the name without `.html` when Google prompts for it.
 
-Run this once to create a new script bound to the existing Sheet. Do not rerun
-creation if `.maintenance/admin-app/.clasp.json` already identifies your admin.
+In **Project Settings**, enable **Show appsscript.json manifest file in editor**.
+Replace that manifest with the checked-in `appsscript.json`. Save all files.
+Do not run or authorize the script until the source and owner settings match.
 
-```bash
-npx --yes @google/clasp create-script --title "Grain List Admin" --parentId 1R1j385dUU2qMtzkSsUM5inT5tTyoTbQwI0vISf1Hav8 --rootDir .maintenance/admin-app
-node tools/prepare_admin_install.cjs
-cd .maintenance/admin-app
-npx --yes @google/clasp push
-npx --yes @google/clasp open-script
-```
-
-The local installer directory is ignored by Git. The checked-in admin source
-is in `admin/apps-script/`; the installer never replaces that source.
+The admin requests Google Sheets read/write access, the signed-in email, and
+external HTTPS connections for GitHub, live publication checks, and address
+lookup. Google's Sheets scope covers spreadsheets generally; application code
+restricts writes to the configured master, but that is not an OAuth restriction.
+It does not request Gmail, contacts, calendar, or the additional clasp scopes.
 
 ### 3. Set Two Private Script Properties
 
@@ -116,7 +114,7 @@ app URL is not an access credential; Google still requires your account.
 3. Confirm the map point and its precision; include supporting source URLs.
 4. **Save draft** writes only Admin Drafts, not the published master record.
 5. **Review changes** shows both master-Sheet and public-site differences.
-6. **Save to Sheet & publish** saves Organizations first and starts validation.
+6. **Save to Sheet & publish** saves Listings first and starts validation.
 7. Check Activity. Only **Published** means the deployed record was read back
    and matched the approved change after a successful workflow.
 
@@ -128,7 +126,10 @@ Row-level developer metadata follows records through normal row sorting.
 
 ## Sheet And Bulk-Import Compatibility
 
-Keep Record ID and Public ID unchanged. Public ID explicitly binds the source
+Keep Record ID and Public ID unchanged. Existing `grain-...` Record IDs in
+Current Listings are already public identities and are never hashed again.
+Website/Sources headers stay unchanged; the admin supports these native names.
+Public ID explicitly binds the source
 row to its existing public profile, including pre-existing identity exceptions.
 The regular Python import respects this binding. Latitude, Longitude, Location
 Precision, City, and Map Fingerprint carry confirmed locations into future bulk
@@ -143,8 +144,9 @@ Sheet edits. Continue using the reviewed bulk workflow for large Sheet changes.
 ## Maintenance And Recovery
 
 - Renew the limited GitHub token in Script Properties before it expires.
-- After code changes, run `make admin`, prepare the installer, push through clasp,
-  then update the existing Apps Script deployment to a new version. Keep its URL.
+- After code changes, run `make admin`, replace the changed files in the browser
+  editor, then update the existing Apps Script deployment to a new version.
+  Keep its URL. Clasp remains an optional alternative for experienced maintainers.
 - Run `make test validate build` before releasing changes.
 - Inspect Admin Activity's Previous Record before-values and Git history when
   correcting an erroneous publication. Restore both the source Sheet values and

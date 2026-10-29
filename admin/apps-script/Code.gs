@@ -1,5 +1,5 @@
-var ADMIN_SHEET_ID_='1R1j385dUU2qMtzkSsUM5inT5tTyoTbQwI0vISf1Hav8';
-var ADMIN_TAB_='Organizations';
+var ADMIN_SHEET_ID_='1zhNRetv5gNYuaQtlZ8hxsW7GBdX7VpMbSN9boXkuYT8';
+var ADMIN_TAB_='Listings';
 var DRAFT_TAB_='Admin Drafts';
 var ACTIVITY_TAB_='Admin Activity';
 var DRAFT_HEADERS_=['Draft ID','Version','Record ID','Public ID','Base Revision','Data','Updated At','State','Live Revision'];
@@ -22,7 +22,9 @@ function book_() {return SpreadsheetApp.openById(ADMIN_SHEET_ID_);}
 function table_(name) {
   var sheet=book_().getSheetByName(name);if(!sheet)throw new Error('Initialize the admin connection first.');
   var rows=sheet.getDataRange().getValues().map(function(row){return row.map(function(v){return v instanceof Date?v.toISOString():String(v==null?'':v);});});
-  var headers=rows.shift();if(new Set(headers).size!==headers.length)throw new Error('The Sheet has duplicate column names.');
+  var headers=rows.shift();
+  if(name===ADMIN_TAB_)headers=headers.map(function(h){return h==='Website'?'URL':(h==='Sources'?'Source':h);});
+  if(new Set(headers).size!==headers.length)throw new Error('The Sheet has duplicate column names.');
   return {sheet:sheet,headers:headers,rows:rows};
 }
 function sheets_(method,path,body) {
@@ -97,7 +99,7 @@ function initializeAdmin() {
     published.forEach(function(o){var k=GrainAdminDomain.identity(o);byName[k]=(byName[k]||[]).concat([o]);});
     published.forEach(function(o){byId[o.id]=o;var k=urlKey(o.url);if(k)byUrl[k]=(byUrl[k]||[]).concat([o]);});
     source.forEach(function(r){if(r.Name){var k=GrainAdminDomain.identity({name:r.Name,state:r.State});nameCounts[k]=(nameCounts[k]||0)+1;var u=urlKey(r.URL);if(u)urlCounts[u]=(urlCounts[u]||0)+1;}});
-    var required=['Name','Category','State','Function','Grains','Address','Phone','Email','URL','Source','Record ID','Status','Operational Status'];
+    var required=['Name','Category','State','Function','Grains','Address','Phone','Email','URL','Source','Record ID'];
     if(required.some(function(h){return table.headers.indexOf(h)<0;}))throw new Error('The Organizations headers do not match the publication source.');
     var headers=table.headers.concat(GrainAdminDomain.extraHeaders.filter(function(h){return table.headers.indexOf(h)<0;})), cells=[];
     if(table.sheet.getMaxColumns()<headers.length)table.sheet.insertColumnsAfter(table.sheet.getMaxColumns(),headers.length-table.sheet.getMaxColumns());
@@ -113,6 +115,8 @@ function initializeAdmin() {
       if(!/^grain-[a-f0-9]{16}$/.test(id))throw new Error('An existing Public ID is invalid: '+r.Name);
       if(seen[id]||seenRaw[raw])throw new Error('An ambiguous duplicate needs review: '+r.Name);seen[id]=true;seenRaw[raw]=true;
       [['Record ID',raw],['Public ID',id]].forEach(function(pair){if(!r[pair[0]])cells.push({row:r._row,col:headers.indexOf(pair[0]),value:pair[1]});});
+      if(!r.Status)cells.push({row:r._row,col:headers.indexOf('Status'),value:match?match.status||'Partial':'Partial'});
+      if(!r['Operational Status'])cells.push({row:r._row,col:headers.indexOf('Operational Status'),value:'Active'});
       if(match && match.location && !r.Latitude && !r.Longitude && GrainAdminDomain.key(r.Address)===GrainAdminDomain.key(match.address) && r.State===match.state) {
         var identity={name:r.Name,state:r.State,address:r.Address,location:match.location};
         [['Latitude',match.location.lat],['Longitude',match.location.lng],['Location Precision',match.location.precision],['Map Fingerprint',hash_(GrainAdminDomain.mapKey(identity))],['City',r.City||match.city||'']].forEach(function(pair){cells.push({row:r._row,col:headers.indexOf(pair[0]),value:pair[1]});});seeded++;
@@ -145,6 +149,7 @@ function writeOrganization_(draft,current) {
   var table=current.table, row=current.records.find(function(r){return r.recordId===draft.recordId;}), o=draft.data, fields={};
   Object.keys(GrainAdminDomain.fields).forEach(function(k){var v=o[k];fields[GrainAdminDomain.fields[k]]=Array.isArray(v)?v.join(k==='sources'?'; ':', '):v;});
   Object.assign(fields,{'Record ID':draft.recordId,'Public ID':draft.publicId,'Latitude':o.location?o.location.lat:'','Longitude':o.location?o.location.lng:'','Location Precision':o.location?o.location.precision:'','Map Fingerprint':o.locationChecked?hash_(GrainAdminDomain.mapKey(o)):''});
+  if(!row && table.headers.indexOf('Grain List Profile')>=0)fields['Grain List Profile']=origin_()+'/organizations/'+draft.publicId+'/';
   if(row) {
     // Re-resolve the ID immediately before writing; never trust a client row number.
     var fresh=readRecords_().records.find(function(r){return r.recordId===draft.recordId;});

@@ -4,6 +4,19 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {fixture,domain,data,hash,allowed,clone,root,applyPublication}=require('./helpers/admin_fixture.cjs');
 
+test('admin uses Current Listings and preserves its existing public Record IDs',()=>{
+  const f=fixture(),s=f.tables.get('Listings');
+  s.rows=[['Name','Category','State','City','Function','Grains','Address','Phone','Email','Website','Grain List Profile','Sources','Record ID'],[data.name,data.category,data.state,data.city,data.functions.join('; '),data.grains.join('; '),data.address,data.phone,data.email,data.url,'https://grain-list.vercel.app/organizations/sample-farm/',data.sources.join('\n'),f.publicId]];
+  const before=clone(s.rows[1]);f.tables.delete('Admin Drafts');f.tables.delete('Admin Activity');
+  assert.equal(f.context.ADMIN_SHEET_ID_,'1zhNRetv5gNYuaQtlZ8hxsW7GBdX7VpMbSN9boXkuYT8');assert.equal(f.state().needsSetup,true);f.context.initializeAdmin();
+  assert.deepEqual(s.rows[1].slice(0,13),before);const record=f.state().records[0];assert.equal(record.recordId,f.publicId);assert.equal(record.publicId,f.publicId);assert.equal(record.url,data.url);assert.deepEqual([...record.sources],data.sources);assert.equal(f.state().unlinked.length,0);
+  const draft=f.context.saveAdminDraft({recordId:record.recordId,baseRevision:record.revision,data:{...data,grains:['Rye']}});f.context.publishAdminDraft({draftId:draft.draftId,version:draft.version});assert.equal(s.rows.length,2);assert.equal(s.rows[1][12],f.publicId);assert.equal(s.rows[1][5],'Rye');assert.equal(JSON.parse(f.env.dispatches[0].inputs.publication).upserts[0].id,f.publicId);
+});
+test('new source rows receive a stable link that redirects to their named profile',()=>{
+  const f=fixture(),sheet=f.tables.get('Listings');sheet.rows[0].push('Grain List Profile');sheet.rows[1].push('https://grain-list.vercel.app/organizations/sample-farm/');
+  const draft=f.context.saveAdminDraft({data:{...data,name:'New Farm'}});f.context.publishAdminDraft({draftId:draft.draftId,version:draft.version});assert.equal(sheet.rows[2].at(-1),'https://grain-list.vercel.app/organizations/'+draft.publicId+'/');assert.equal(sheet.rows[1].at(-1),'https://grain-list.vercel.app/organizations/sample-farm/');
+});
+
 test('admin fails closed for a different or unavailable Google identity',()=>{
   for(const activeEmail of ['', 'someone@private.test']){const f=fixture({activeEmail});for(const fn of ['getAdminState','initializeAdmin','saveAdminDraft','publishAdminDraft','getAdminPublicationStatus','lookupAdminAddress'])assert.throws(()=>f.context[fn]({}),/restricted/);assert.equal(f.env.writes.length,0);}
 });
@@ -14,19 +27,19 @@ test('Google-hosted admin explicitly enables the mobile viewport',()=>{
   const output=fixture().context.doGet();assert.equal(output.name,'viewport');assert.equal(output.value,'width=device-width, initial-scale=1');
 });
 test('draft saves are durable in Google Sheet without changing the master record',()=>{
-  const f=fixture(), before=clone(f.tables.get('Organizations').rows);
-  const d=f.save({grains:['Rye']});assert.equal(d.state,'Draft');assert.equal(f.tables.get('Admin Drafts').rows.length,2);assert.deepEqual(f.tables.get('Organizations').rows,before);assert.equal(f.env.dispatches.length,0);
+  const f=fixture(), before=clone(f.tables.get('Listings').rows);
+  const d=f.save({grains:['Rye']});assert.equal(d.state,'Draft');assert.equal(f.tables.get('Admin Drafts').rows.length,2);assert.deepEqual(f.tables.get('Listings').rows,before);assert.equal(f.env.dispatches.length,0);
 });
 test('incomplete additions can be saved as drafts but cannot publish',()=>{
-  const f=fixture();const draft=f.context.saveAdminDraft({data:{name:'New farm',functions:[],grains:[],sources:[]}});assert.equal(draft.data.state,'');assert.equal(f.tables.get('Organizations').rows.length,2);assert.throws(()=>f.context.publishAdminDraft({draftId:draft.draftId,version:draft.version}),/state/);
+  const f=fixture();const draft=f.context.saveAdminDraft({data:{name:'New farm',functions:[],grains:[],sources:[]}});assert.equal(draft.data.state,'');assert.equal(f.tables.get('Listings').rows.length,2);assert.throws(()=>f.context.publishAdminDraft({draftId:draft.draftId,version:draft.version}),/state/);
 });
 test('stale source revisions and concurrent draft edits cannot overwrite newer work',()=>{
   const f=fixture(), d=f.save();f.context.saveAdminDraft({...d,data:{...data,grains:['Rye']}});assert.throws(()=>f.context.saveAdminDraft({...d,data}),/another tab/);
-  const s=f.state().records[0];f.tables.get('Organizations').rows[1][f.headers.indexOf('Name')]='Updated directly in Sheet';assert.throws(()=>f.context.saveAdminDraft({recordId:s.recordId,baseRevision:s.revision,data}),/Sheet changed/);
+  const s=f.state().records[0];f.tables.get('Listings').rows[1][f.headers.indexOf('Name')]='Updated directly in Sheet';assert.throws(()=>f.context.saveAdminDraft({recordId:s.recordId,baseRevision:s.revision,data}),/Sheet changed/);
 });
 test('publishing saves to master first, preserves private columns, and dispatches public fields only',()=>{
   const f=fixture(),d=f.save({grains:['Rye']});const result=f.context.publishAdminDraft({draftId:d.draftId,version:d.version});
-  assert.equal(result.status,'Queued');const row=f.tables.get('Organizations').rows[1];assert.equal(row[f.headers.indexOf('Grains')],'Rye');assert.equal(row[f.headers.indexOf('Notes')],'Private note preserved');assert.equal(row[f.headers.indexOf('Confidence')],'0.9');
+  assert.equal(result.status,'Queued');const row=f.tables.get('Listings').rows[1];assert.equal(row[f.headers.indexOf('Grains')],'Rye');assert.equal(row[f.headers.indexOf('Notes')],'Private note preserved');assert.equal(row[f.headers.indexOf('Confidence')],'0.9');
   const sent=JSON.parse(f.env.dispatches[0].inputs.publication);assert.equal(sent.upserts[0].id,f.publicId);assert.equal('recordId' in sent.upserts[0],false);assert.equal('notes' in sent.upserts[0],false);assert.equal(sent.upserts[0].grains[0],'Rye');assert.equal(f.env.metadata.length,1);
 });
 test('row metadata follows the record through sorting and never writes a different row',()=>{
@@ -36,14 +49,14 @@ test('row metadata follows the record through sorting and never writes a differe
   f.context.writeRecord_(table,f.rawId,{Phone:'303-555-3333'});assert.equal(other[f.headers.indexOf('Phone')],'303-555-2222');assert.equal(target[f.headers.indexOf('Phone')],'303-555-3333');
 });
 test('changing a Public ID directly in the Sheet invalidates an open form',()=>{
-  const f=fixture(),r=f.state().records[0];f.tables.get('Organizations').rows[1][f.headers.indexOf('Public ID')]='grain-abcdefabcdefabcd';assert.throws(()=>f.context.saveAdminDraft({recordId:r.recordId,baseRevision:r.revision,data}),/Sheet changed/);
+  const f=fixture(),r=f.state().records[0];f.tables.get('Listings').rows[1][f.headers.indexOf('Public ID')]='grain-abcdefabcdefabcd';assert.throws(()=>f.context.saveAdminDraft({recordId:r.recordId,baseRevision:r.revision,data}),/Sheet changed/);
 });
 test('no publishing token leaves a draft intact and never changes the master',()=>{
-  const f=fixture(),d=f.save({grains:['Rye']}),before=clone(f.tables.get('Organizations').rows);f.properties.delete('GITHUB_TOKEN');assert.throws(()=>f.context.publishAdminDraft({draftId:d.draftId,version:d.version}),/not configured/);assert.deepEqual(f.tables.get('Organizations').rows,before);
+  const f=fixture(),d=f.save({grains:['Rye']}),before=clone(f.tables.get('Listings').rows);f.properties.delete('GITHUB_TOKEN');assert.throws(()=>f.context.publishAdminDraft({draftId:d.draftId,version:d.version}),/not configured/);assert.deepEqual(f.tables.get('Listings').rows,before);
 });
 test('failed dispatch reports saved but not published and retains a retryable draft',()=>{
-  const f=fixture(),d=f.save({grains:['Rye']});f.env.failDispatch=true;const result=f.context.publishAdminDraft({draftId:d.draftId,version:d.version});assert.equal(result.status,'Saved; not published');assert.equal(f.properties.has('ACTIVE_PUBLICATION'),false);assert.equal(f.tables.get('Organizations').rows[1][f.headers.indexOf('Grains')],'Rye');
-  f.env.failDispatch=false;const retry=f.context.publishAdminDraft({draftId:d.draftId,version:result.draft.version});assert.equal(retry.status,'Queued');assert.equal(f.tables.get('Organizations').rows.length,2);
+  const f=fixture(),d=f.save({grains:['Rye']});f.env.failDispatch=true;const result=f.context.publishAdminDraft({draftId:d.draftId,version:d.version});assert.equal(result.status,'Saved; not published');assert.equal(f.properties.has('ACTIVE_PUBLICATION'),false);assert.equal(f.tables.get('Listings').rows[1][f.headers.indexOf('Grains')],'Rye');
+  f.env.failDispatch=false;const retry=f.context.publishAdminDraft({draftId:d.draftId,version:result.draft.version});assert.equal(retry.status,'Queued');assert.equal(f.tables.get('Listings').rows.length,2);
 });
 test('a second publication is blocked until the active one completes',()=>{
   const f=fixture(),d=f.save();const r=f.context.publishAdminDraft({draftId:d.draftId,version:d.version});assert.throws(()=>f.context.publishAdminDraft({draftId:d.draftId,version:r.draft.version}),/in progress/);
@@ -71,14 +84,14 @@ test('map confirmation, placeholders, forbidden grains and unsupported functions
   const f=fixture(),d=f.save({locationChecked:false});assert.throws(()=>f.context.publishAdminDraft({draftId:d.draftId,version:d.version}),/Confirm the map/);
 });
 test('Sheet writes treat user input as literal text, not formulas',()=>{
-  const f=fixture(),d=f.save({name:'=IMPORTXML("https://evil.test")'});f.context.publishAdminDraft({draftId:d.draftId,version:d.version});assert.equal(f.tables.get('Organizations').rows[1][f.headers.indexOf('Name')],'=IMPORTXML("https://evil.test")');
+  const f=fixture(),d=f.save({name:'=IMPORTXML("https://evil.test")'});f.context.publishAdminDraft({draftId:d.draftId,version:d.version});assert.equal(f.tables.get('Listings').rows[1][f.headers.indexOf('Name')],'=IMPORTXML("https://evil.test")');
 });
 test('initialization preserves existing IDs and details while binding missing IDs to current site identities',()=>{
-  const f=fixture(),sheet=f.tables.get('Organizations');sheet.rows[0]=sheet.rows[0].slice(0,15);sheet.rows[1]=sheet.rows[1].slice(0,15);sheet.rows[1][13]='';const before=sheet.rows[1].slice(0,13);f.tables.delete('Admin Drafts');f.tables.delete('Admin Activity');
+  const f=fixture(),sheet=f.tables.get('Listings');sheet.rows[0]=sheet.rows[0].slice(0,15);sheet.rows[1]=sheet.rows[1].slice(0,15);sheet.rows[1][13]='';const before=sheet.rows[1].slice(0,13);f.tables.delete('Admin Drafts');f.tables.delete('Admin Activity');
   f.context.initializeAdmin();assert.deepEqual(sheet.rows[1].slice(0,13),before);assert.equal(sheet.rows[1][sheet.rows[0].indexOf('Public ID')],f.publicId);assert.ok(sheet.rows[1][13]);assert.ok(f.state().records[0].locationChecked);
 });
 test('a unique exact website preserves identity even when the source name contains a typo',()=>{
-  const f=fixture(),sheet=f.tables.get('Organizations');sheet.rows[0]=sheet.rows[0].slice(0,15);sheet.rows[1]=sheet.rows[1].slice(0,15);sheet.rows[1][13]='';sheet.rows[1][2]='Sampl Farm';f.tables.delete('Admin Drafts');f.tables.delete('Admin Activity');f.context.initializeAdmin();assert.equal(f.state().records[0].publicId,f.publicId);
+  const f=fixture(),sheet=f.tables.get('Listings');sheet.rows[0]=sheet.rows[0].slice(0,15);sheet.rows[1]=sheet.rows[1].slice(0,15);sheet.rows[1][13]='';sheet.rows[1][2]='Sampl Farm';f.tables.delete('Admin Drafts');f.tables.delete('Admin Activity');f.context.initializeAdmin();assert.equal(f.state().records[0].publicId,f.publicId);
 });
 test('publication changes only the reviewed record, not unrelated source rows',()=>{
   const first=clone(domain.toPublic(data,'grain-1111111111111111','Partial')), second={...clone(first),id:'grain-2222222222222222',name:'Other farm',state:'MT'};

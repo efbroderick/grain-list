@@ -12,14 +12,14 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 
 function fixture(options={}) {
   const properties=new Map([['ADMIN_EMAIL','owner@private.test'],['GITHUB_TOKEN','test-only-not-a-credential']]);
-  const headers=['Category','Function','Name','State','Grains','Address','Phone','Email','URL','Status','Confidence','Source','Notes','Record ID','Operational Status',...domain.extraHeaders];
+  const headers=[...new Set(['Category','Function','Name','State','Grains','Address','Phone','Email','URL','Status','Confidence','Source','Notes','Record ID','Operational Status',...domain.extraHeaders])];
   const rawId='org-001',publicId=domain.publicId(rawId,hash), row={Category:data.category,Function:data.functions.join(', '),Name:data.name,State:data.state,Grains:data.grains.join(', '),Address:data.address,Phone:data.phone,Email:data.email,URL:data.url,Status:'Partial',Confidence:'0.9',Source:data.sources.join('; '),Notes:'Private note preserved','Record ID':rawId,'Operational Status':'Active','Public ID':publicId,City:data.city,Latitude:String(data.location.lat),Longitude:String(data.location.lng),'Location Precision':'address','Map Fingerprint':hash(domain.mapKey(data))};
   const tables=new Map();let nextId=1;
   function addSheet(name,rows) {
     const sheet={id:nextId++,name,rows,getName(){return this.name;},getSheetId(){return this.id;},getMaxColumns(){return Math.max(...this.rows.map(r=>r.length));},insertColumnsAfter(){},setFrozenRows(){},getDataRange(){return {getValues:()=>this.rows.map(r=>[...r])};},getRange(r,c,h,w){return {setValues:values=>{for(let y=0;y<h;y++){this.rows[r-1+y]||=[];for(let x=0;x<w;x++)this.rows[r-1+y][c-1+x]=values[y][x];}}};}};
     tables.set(name,sheet);return sheet;
   }
-  addSheet('Organizations',[headers,headers.map(h=>row[h]??'')]);
+  addSheet('Listings',[headers,headers.map(h=>row[h]??'')]);
   const draftHeaders=['Draft ID','Version','Record ID','Public ID','Base Revision','Data','Updated At','State','Live Revision'];
   const activityHeaders=['Request ID','Record ID','Public ID','Name','Saved At','Status','Payload','Workflow URL','Previous Record'];
   addSheet('Admin Drafts',[draftHeaders]);addSheet('Admin Activity',[activityHeaders]);

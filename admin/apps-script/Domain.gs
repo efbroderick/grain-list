@@ -1,7 +1,7 @@
 /* Shared validation runs both in the private admin and in publication tests. */
 var GrainAdminDomain = (function () {
   var states = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' ');
-  var extraHeaders = ['Public ID', 'City', 'Latitude', 'Longitude', 'Location Precision', 'Map Fingerprint'];
+  var extraHeaders = ['Public ID', 'City', 'Latitude', 'Longitude', 'Location Precision', 'Map Fingerprint', 'Status', 'Operational Status'];
   var fields = { name:'Name', category:'Category', state:'State', functions:'Function', grains:'Grains', address:'Address', phone:'Phone', email:'Email', url:'URL', sources:'Source', operationalStatus:'Operational Status', city:'City' };
   function text(v, max) {
     var s = String(v == null ? '' : v).trim();
@@ -14,7 +14,7 @@ var GrainAdminDomain = (function () {
   function identity(o) { return key(o.name) + '|' + o.state; }
   function addressKey(v) {var aliases={st:'street',rd:'road',ln:'lane',hwy:'highway',blvd:'boulevard',ave:'avenue',av:'avenue',dr:'drive',ct:'court',cir:'circle',pkwy:'parkway',pl:'place',ter:'terrace',terr:'terrace',trl:'trail',rte:'route',tpke:'turnpike',expy:'expressway',fwy:'freeway'};return key(v).replace(/\b(st|rd|ln|hwy|blvd|ave|av|dr|ct|cir|pkwy|pl|ter|terr|trl|rte|tpke|expy|fwy)\b/g,function(s){return aliases[s];});}
   function mapKey(o) { return JSON.stringify([addressKey(o.address),o.state,o.location && o.location.precision === 'organization' ? key(o.name) : '']); }
-  function publicId(raw, hash) { return 'grain-' + hash(String(raw)).slice(0,16); }
+  function publicId(raw, hash) { return /^grain-[a-f0-9]{16}$/.test(String(raw)) ? String(raw) : 'grain-' + hash(String(raw)).slice(0,16); }
   function normalize(input, allowed, allowIncomplete) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid organization.');
     var o = {};
