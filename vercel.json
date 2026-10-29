@@ -681,6 +681,11 @@
       "permanent": true
     },
     {
+      "source": "/organizations/grain-295d30060a440d00/",
+      "destination": "/organizations/base-camp-bakery/",
+      "permanent": true
+    },
+    {
       "source": "/organizations/grain-296e8ab9f356f6ea/",
       "destination": "/organizations/grain-place-foods/",
       "permanent": true
