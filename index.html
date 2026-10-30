@@ -32,7 +32,7 @@
       href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
     />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
-    <link rel="stylesheet" href="/styles.css?v=20261025-usability" />
+    <link rel="stylesheet" href="/styles.css?v=20261030-search" />
   </head>
   <body data-mobile-view="map">
     <header class="topbar">
@@ -46,19 +46,25 @@
         </span>
       </a>
 
-      <label class="search-box" for="search-input">
+      <div class="search-box" role="search" aria-label="Search Grain List">
         <i data-lucide="search" aria-hidden="true"></i>
         <input
           id="search-input"
           type="search"
           autocomplete="off"
+          role="combobox"
+          aria-label="Search organizations, places, or grains"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="search-suggestions"
           placeholder="Search names, places, grains..."
         />
         <button id="clear-search" class="icon-button search-clear" type="button" title="Clear search" hidden>
           <i data-lucide="x" aria-hidden="true"></i>
           <span class="sr-only">Clear search</span>
         </button>
-      </label>
+        <div id="search-suggestions" class="search-suggestions" role="listbox" aria-label="Search suggestions" hidden></div>
+      </div>
 
       <div class="header-actions">
         <button id="install-button" class="icon-button" type="button" title="Add to Home Screen" aria-label="Add to Home Screen" hidden>
@@ -159,6 +165,7 @@
           <label class="sort-control">
             <span class="sr-only">Sort results</span>
             <select id="sort-select">
+              <option value="relevance">Relevance</option>
               <option value="name">Name</option>
               <option value="distance" disabled>Distance</option>
             </select>
@@ -173,7 +180,7 @@
         <div class="map-actions">
           <button id="fit-results-button" class="button button-secondary map-button" type="button" title="Reset map to all filtered results">
             <i data-lucide="rotate-ccw" aria-hidden="true"></i>
-            <span>Reset map</span>
+            <span>Show all matches</span>
           </button>
         </div>
         <details class="map-legend">
@@ -254,6 +261,6 @@
     <script src="/basemap.js?v=20261026-vector"></script>
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
     <script src="/site-config.js?v=20261007"></script>
-    <script type="module" src="/app.js?v=20261026-vector-__DATA_VERSION__"></script>
+    <script type="module" src="/app.js?v=20261030-search-__DATA_VERSION__"></script>
   </body>
 </html>

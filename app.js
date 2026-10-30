@@ -1,10 +1,24 @@
 const DATA_URL = "/data/organizations.json?version=__DATA_VERSION__";
 const USA_VIEW = { center: [39.5, -98.35], zoom: 4 };
 const MAX_VISIBLE_RESULTS = 250;
+const STATE_NAMES = Object.fromEntries([
+  'AL:Alabama', 'AK:Alaska', 'AZ:Arizona', 'AR:Arkansas', 'CA:California', 'CO:Colorado',
+  'CT:Connecticut', 'DE:Delaware', 'DC:District of Columbia', 'FL:Florida', 'GA:Georgia',
+  'HI:Hawaii', 'ID:Idaho', 'IL:Illinois', 'IN:Indiana', 'IA:Iowa', 'KS:Kansas',
+  'KY:Kentucky', 'LA:Louisiana', 'ME:Maine', 'MD:Maryland', 'MA:Massachusetts',
+  'MI:Michigan', 'MN:Minnesota', 'MS:Mississippi', 'MO:Missouri', 'MT:Montana',
+  'NE:Nebraska', 'NV:Nevada', 'NH:New Hampshire', 'NJ:New Jersey', 'NM:New Mexico',
+  'NY:New York', 'NC:North Carolina', 'ND:North Dakota', 'OH:Ohio', 'OK:Oklahoma',
+  'OR:Oregon', 'PA:Pennsylvania', 'RI:Rhode Island', 'SC:South Carolina',
+  'SD:South Dakota', 'TN:Tennessee', 'TX:Texas', 'UT:Utah', 'VT:Vermont',
+  'VA:Virginia', 'WA:Washington', 'WV:West Virginia', 'WI:Wisconsin', 'WY:Wyoming',
+].map(entry => entry.split(':')));
+const SEARCH_WORDS = { bakeries: 'baker', bakery: 'baker', bakers: 'baker', baked: 'baker', growers: 'grower', mills: 'mill', millers: 'mill', oats: 'oat', breweries: 'brew', brewery: 'brew', brewing: 'brew', brewer: 'brew', brewers: 'brew' };
 
 const elements = {
   search: document.querySelector("#search-input"),
   clearSearch: document.querySelector("#clear-search"),
+  suggestions: document.querySelector("#search-suggestions"),
   state: document.querySelector("#state-filter"),
   radius: document.querySelector("#radius-filter"),
   distanceField: document.querySelector("#distance-field"),
@@ -52,6 +66,7 @@ const state = {
   userLocation: null,
   focusedOrganizationId: "",
   selectedOrganization: null,
+  initialView: null,
 };
 
 let map;
@@ -61,14 +76,142 @@ const markersById = new Map();
 let lastFiltered = [];
 let toastTimer;
 let mobileSheet;
+let searchSuggestions = [];
+let suggestionIndex = -1;
+let places = [];
+let intentCache;
+let highlightedMarker;
+let searchTimer;
 
 function normalized(value) {
   return String(value || "")
     .toLocaleLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['\u2019]/g, '')
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function searchWords(value) {
+  return normalized(value).split(' ').filter(Boolean).map(word => SEARCH_WORDS[word] || word);
+}
+
+function initializeSearch() {
+  const cities = new Map();
+  for (const o of state.organizations) {
+    if (!o.city || !o.location || o.location.precision === 'state') continue;
+    const key = `${normalized(o.city)}|${o.state}`;
+    if (!cities.has(key)) cities.set(key, { type: 'city', city: o.city, code: o.state, label: `${o.city}, ${o.state}` });
+  }
+  places = [...Object.entries(STATE_NAMES).map(([code, name]) => ({ type: 'state', code, label: name })), ...cities.values()];
+  intentCache = null;
+}
+
+function searchIntent() {
+  if (intentCache?.query === state.query) return intentCache.value;
+  let text = normalized(state.query);
+  let place = null;
+  // Exact organization names take precedence over similarly named places.
+  const isGrain = state.organizations.some(o => o.grains.some(grain => normalized(grain) === text));
+  if (!isGrain && !state.organizations.some(o => normalized(o.name) === text)) {
+    const states = places.filter(p => p.type === 'state').sort((a, b) => b.label.length - a.label.length);
+    for (const p of states) {
+      const label = normalized(p.label), code = p.code.toLowerCase();
+      const suffix = text === label || text.endsWith(` ${label}`) ? label : text === code || text.endsWith(` ${code}`) ? code : '';
+      if (suffix) { place = p; text = text.slice(0, -suffix.length).trim(); break; }
+    }
+    const cities = places.filter(p => p.type === 'city' && (!place || p.code === place.code) && (text === normalized(p.city) || text.endsWith(` ${normalized(p.city)}`)));
+    const longest = cities.sort((a, b) => b.city.length - a.city.length)[0];
+    const sameName = longest && cities.filter(p => normalized(p.city) === normalized(longest.city));
+    if (sameName?.length === 1) { place = longest; text = text.slice(0, -normalized(longest.city).length).trim(); }
+    if (place) text = text.replace(/(?:^| )(?:near|in)$/, '').trim();
+  }
+  const value = { place, terms: searchWords(text) };
+  intentCache = { query: state.query, value };
+  return value;
+}
+
+function queryScore(o) {
+  const query = normalized(state.query), name = normalized(o.name);
+  if (!query) return 0;
+  if (name === query) return 1000;
+  if (name.startsWith(query)) return 700;
+  if (name.includes(query)) return 500;
+  const words = searchWords(o.name);
+  return searchIntent().terms.reduce((score, term) => score + (words.some(w => w.startsWith(term)) ? 30 : 0), 0);
+}
+
+function closeSuggestions() {
+  elements.suggestions.hidden = true;
+  elements.search.setAttribute('aria-expanded', 'false');
+  elements.search.removeAttribute('aria-activedescendant');
+  suggestionIndex = -1;
+}
+
+function renderSuggestions() {
+  const query = normalized(elements.search.value);
+  elements.suggestions.replaceChildren();
+  if (!query) { closeSuggestions(); return; }
+  const placeMatches = places.filter(p => query.split(' ').every(term => normalized(p.label).split(' ').some(word => word === term || (term.length >= 3 && word.startsWith(term)))) || (p.type === 'state' && p.code.toLowerCase() === query))
+    .sort((a, b) => Number(normalized(b.label) === query || b.code.toLowerCase() === query) - Number(normalized(a.label) === query || a.code.toLowerCase() === query) || a.label.localeCompare(b.label)).slice(0, 4);
+  const orgMatches = state.organizations.filter(o => matchesQuery(o) && queryScore(o) > 0)
+    .sort((a, b) => queryScore(b) - queryScore(a) || a.name.localeCompare(b.name)).slice(0, 5);
+  searchSuggestions = [
+    ...orgMatches.map(o => ({ type: 'organization', organization: o, label: o.name, secondary: [o.city, o.state].filter(Boolean).join(', ') })),
+    ...placeMatches.map(p => ({ ...p, secondary: p.type === 'state' ? 'State' : 'City or region' })),
+    { type: 'query', label: `Search for “${elements.search.value.trim()}”`, secondary: 'All matching organizations' },
+  ];
+  searchSuggestions.forEach((suggestion, index) => {
+    const option = document.createElement('div');
+    option.id = `search-option-${index}`;
+    option.className = 'search-option';
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', 'false');
+    option.innerHTML = `<strong>${escapeHtml(suggestion.label)}</strong><span>${escapeHtml(suggestion.secondary)}</span>`;
+    option.addEventListener('pointerdown', e => e.preventDefault());
+    option.addEventListener('click', () => submitSearch(suggestion));
+    elements.suggestions.append(option);
+  });
+  suggestionIndex = -1;
+  elements.suggestions.hidden = false;
+  elements.search.setAttribute('aria-expanded', 'true');
+  elements.search.removeAttribute('aria-activedescendant');
+}
+
+function fitPlace(place) {
+  const organizations = state.organizations.filter(o => o.state === place.code && (place.type === 'state' || normalized(o.city) === normalized(place.city)) && o.location);
+  if (!organizations.length) return false;
+  const bounds = L.latLngBounds(organizations.map(o => [o.location.lat, o.location.lng]));
+  frameBounds(bounds, place.type === 'city' ? 10 : 7);
+  return true;
+}
+
+function submitSearch(suggestion) {
+  window.clearTimeout(searchTimer);
+  const o = suggestion?.organization;
+  state.query = o ? o.name : suggestion && suggestion.type !== 'query' ? suggestion.label : elements.search.value;
+  state.focusedOrganizationId = '';
+  state.sort = state.query.trim() ? 'relevance' : 'name';
+  const place = searchIntent().place;
+  if (place) { state.stateCode = ''; state.radius = ''; }
+  let cleared = false;
+  if (o) {
+    if (state.stateCode && state.stateCode !== o.state) { state.stateCode = ''; cleared = true; }
+    if (!matchesSelection(o.functions, state.functions)) { state.functions.clear(); cleared = true; }
+    if (!matchesSelection(o.grains, state.grains)) { state.grains.clear(); cleared = true; }
+    if (state.radius && state.userLocation && (!hasDistancePrecision(o) || distanceMiles(state.userLocation, o.location) > Number(state.radius))) { state.radius = ''; cleared = true; }
+    if (cleared) refreshCheckboxes();
+  }
+  closeSuggestions();
+  closeFilterMenus();
+  closeFilters();
+  render();
+  if (place) fitPlace(place);
+  else fitResults();
+  if (o) showDetails(o);
+  if (cleared) showToast('Conflicting filters cleared for this organization.');
+  if (window.matchMedia?.('(max-width: 720px)')?.matches) elements.search.blur();
 }
 
 function escapeHtml(value) {
@@ -142,7 +285,7 @@ function initializeMap() {
   map = L.map("map", {
     center: USA_VIEW.center,
     zoom: USA_VIEW.zoom,
-    minZoom: 3,
+    minZoom: 2,
     maxZoom: 16,
     zoomControl: false,
     preferCanvas: true,
@@ -178,6 +321,7 @@ function initializeMap() {
   map.addLayer(markerLayer);
   map.on("moveend", () => {
     renderViewportResults();
+    updateUrl();
   });
 }
 
@@ -193,6 +337,9 @@ function parseUrlState() {
   state.functions = new Set((params.get("functions") || "").split("|").filter(Boolean));
   state.grains = new Set((params.get("grains") || "").split("|").filter(Boolean));
   state.radius = params.get("radius") || "";
+  state.sort = state.query.trim() ? 'relevance' : 'name';
+  const view = params.get('view')?.split(',').map(Number);
+  state.initialView = view?.length === 3 && view.every(Number.isFinite) && Math.abs(view[0]) <= 85 && Math.abs(view[1]) <= 180 && view[2] >= 2 && view[2] <= 16 ? view : null;
   state.focusedOrganizationId = listingIdFromLocation();
 }
 
@@ -203,6 +350,12 @@ function updateUrl() {
   if (state.functions.size) params.set("functions", [...state.functions].sort().join("|"));
   if (state.grains.size) params.set("grains", [...state.grains].sort().join("|"));
   if (state.radius && state.userLocation) params.set("radius", state.radius);
+  if (map?.getCenter && map?.getZoom) {
+    const inset = mobileSheet?.inset() || 0;
+    const size = inset && map.getSize?.();
+    const center = size && map.containerPointToLatLng ? map.containerPointToLatLng([size.x / 2, Math.max(1, size.y - inset) / 2]) : map.getCenter();
+    params.set('view', `${center.lat.toFixed(5)},${center.lng.toFixed(5)},${map.getZoom()}`);
+  }
   const query = params.toString();
   const route = state.selectedOrganization ? organizationUrl(state.selectedOrganization) : "/";
   window.history.replaceState(window.history.state, "", `${route}${query ? `?${query}` : ""}`);
@@ -237,7 +390,6 @@ function renderCheckboxOptions(container, entries, selected, key) {
       });
       syncControls();
       render();
-      fitResults();
     });
     container.append(label);
   }
@@ -275,8 +427,10 @@ function syncControls() {
 
 function matchesQuery(organization) {
   if (!state.query) return true;
-  const terms = normalized(state.query).split(" ").filter(Boolean);
-  return terms.every((term) => organization.searchText.includes(term));
+  const { place, terms } = searchIntent();
+  if (place?.type === 'state' && organization.state !== place.code) return false;
+  const words = searchWords(organization.searchText);
+  return terms.every(term => words.some(word => word === term || (term.length >= 3 && word.startsWith(term))));
 }
 
 function matchesSelection(values, selected) {
@@ -284,7 +438,7 @@ function matchesSelection(values, selected) {
 }
 
 function filteredOrganizations(ignoreBounds = false) {
-  const bounds = !ignoreBounds && map ? map.getBounds() : null;
+  const bounds = !ignoreBounds && map ? visibleMapBounds() : null;
   const radius = state.userLocation && state.radius ? Number(state.radius) : null;
   const results = state.organizations.filter((organization) => {
     if (!matchesQuery(organization)) return false;
@@ -309,16 +463,26 @@ function filteredOrganizations(ignoreBounds = false) {
   }
   results.sort((a, b) => {
     if (state.sort === "distance" && state.userLocation) {
+      if (a.distance == null && b.distance == null) return a.name.localeCompare(b.name);
       if (a.distance == null) return 1;
       if (b.distance == null) return -1;
       return a.distance - b.distance || a.name.localeCompare(b.name);
     }
+    if (state.sort === 'relevance' && state.query.trim()) return queryScore(b) - queryScore(a) || a.name.localeCompare(b.name);
     return a.name.localeCompare(b.name);
   });
   return results;
 }
 
+function visibleMapBounds() {
+  const inset = mobileSheet?.inset() || 0;
+  if (!inset || !map.containerPointToLatLng) return map.getBounds();
+  const size = map.getSize();
+  return L.latLngBounds(map.containerPointToLatLng([0, 0]), map.containerPointToLatLng([size.x, Math.max(1, size.y - inset)]));
+}
+
 function renderMarkers(organizations) {
+  highlightOrganization(null);
   markerLayer.clearLayers();
   markersById.clear();
   for (const organization of organizations) {
@@ -342,6 +506,10 @@ function resultItem(organization) {
   const button = document.createElement("a");
   button.className = "result-item";
   button.href = organizationUrl(organization);
+  button.addEventListener('mouseenter', () => highlightOrganization(organization));
+  button.addEventListener('mouseleave', () => highlightOrganization(null));
+  button.addEventListener('focus', () => highlightOrganization(organization));
+  button.addEventListener('blur', () => highlightOrganization(null));
   button.addEventListener("click", event => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (event.button != null && event.button !== 0)) return;
     event.preventDefault();
@@ -366,6 +534,16 @@ function resultItem(organization) {
   `;
   button.querySelectorAll("p").forEach(paragraph => { paragraph.title = paragraph.textContent; });
   return button;
+}
+
+function highlightOrganization(organization) {
+  highlightedMarker?.classList.remove('search-marker-active');
+  highlightedMarker = null;
+  if (!organization) return;
+  const marker = markersById.get(organization.id);
+  const visible = marker && (markerLayer.getVisibleParent?.(marker) || marker);
+  highlightedMarker = visible?.getElement?.() || null;
+  highlightedMarker?.classList.add('search-marker-active');
 }
 
 function organizationUrl(organization) {
@@ -429,15 +607,32 @@ function closeDetails() {
 }
 
 function renderResults(organizations) {
+  highlightOrganization(null);
   elements.results.replaceChildren();
   if (!organizations.length) {
+    const elsewhere = filteredOrganizations(true).length;
     const empty = document.createElement("div");
     empty.className = "empty-results";
     empty.innerHTML = `
       <i data-lucide="search-x" aria-hidden="true"></i>
-      <strong>No organizations match</strong>
-      <span>Clear a filter or try a broader search.</span>
+      <strong>${elsewhere ? 'No matches in this area' : 'No organizations match these filters'}</strong>
+      <span>${elsewhere ? `${pluralize(elsewhere, 'match', 'matches')} elsewhere.` : 'Try a broader search or remove a filter.'}</span>
     `;
+    function recovery(label, handler) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'button button-secondary'; button.textContent = label;
+      button.addEventListener('click', handler); empty.append(button);
+    }
+    if (elsewhere) recovery('Show matches elsewhere', fitResults);
+    if (state.radius && Number(state.radius) < 250) recovery('Expand distance', () => {
+      state.radius = String([25, 50, 100, 250].find(r => r > Number(state.radius)));
+      render(); fitResults();
+    });
+    if (state.stateCode || state.functions.size || state.grains.size || state.radius) recovery('Clear filters', () => {
+      state.stateCode = ''; state.functions.clear(); state.grains.clear(); state.radius = '';
+      refreshCheckboxes(); render();
+    });
+    if (state.query) recovery('Clear search', clearSearch);
     elements.results.append(empty);
     window.lucide?.createIcons();
     return;
@@ -478,7 +673,6 @@ function renderActiveFilters() {
       renderCheckboxOptions(elements.grains, countsFor("grains"), state.grains, "grains");
       syncControls();
       render();
-      fitResults();
     }));
   }
   window.lucide?.createIcons();
@@ -521,10 +715,20 @@ function fitResults() {
   const locations = lastFiltered.filter((item) => item.location);
   if (!locations.length) return;
   const bounds = L.latLngBounds(locations.map((item) => [item.location.lat, item.location.lng]));
+  frameBounds(bounds, 12);
+}
+
+function frameBounds(bounds, maxZoom) {
   mobileSheet?.collapse();
   const bottomInset = mobileSheet?.inset() || 0;
   const verticalPadding = Math.min(38, Math.max(4, (map.getSize().y - bottomInset - 20) / 2));
-  map.fitBounds(bounds, { paddingTopLeft: [38, verticalPadding], paddingBottomRight: [38, bottomInset + verticalPadding], maxZoom: 12 });
+  map.fitBounds(bounds, { paddingTopLeft: [38, verticalPadding], paddingBottomRight: [38, bottomInset + verticalPadding], maxZoom });
+}
+
+function restoreMapView(view) {
+  map.setView([view[0], view[1]], view[2], { animate: false });
+  const inset = mobileSheet?.inset() || 0;
+  if (inset) map.panBy([0, inset / 2], { animate: false });
 }
 
 function sheetSizes(viewportHeight, topbarHeight) {
@@ -548,6 +752,7 @@ function initializeMobileSheet() {
     document.body.classList.toggle("sheet-expanded", expanded);
     handle.setAttribute("aria-expanded", String(expanded));
     handle.setAttribute("aria-label", expanded ? "Collapse organization list" : "Expand organization list");
+    if (map?.getBounds && state.organizations.length) renderViewportResults();
   }
 
   function resize() {
@@ -603,6 +808,8 @@ function locateUser() {
   setLocationButtonsDisabled(true);
   navigator.geolocation.getCurrentPosition(
     (position) => {
+      if (searchIntent().place) state.query = searchIntent().terms.join(' ');
+      state.stateCode = '';
       state.userLocation = {
         lat: position.coords.latitude,
         lng: position.coords.longitude,
@@ -621,7 +828,8 @@ function locateUser() {
       setLocationButtonsDisabled(false);
       syncControls();
       render();
-      showToast("Showing organizations within 50 miles.");
+      closeSuggestions();
+      showToast(`Showing organizations within ${state.radius} miles.`);
     },
     () => {
       setLocationButtonsDisabled(false);
@@ -637,6 +845,8 @@ function setLocationButtonsDisabled(disabled) {
 }
 
 function clearAllFilters() {
+  window.clearTimeout(searchTimer);
+  closeSuggestions();
   state.focusedOrganizationId = "";
   state.query = "";
   state.stateCode = "";
@@ -651,30 +861,65 @@ function clearAllFilters() {
   fitResults();
 }
 
+function refreshCheckboxes() {
+  renderCheckboxOptions(elements.functions, countsFor('functions'), state.functions, 'functions');
+  renderCheckboxOptions(elements.grains, countsFor('grains'), state.grains, 'grains');
+}
+
+function clearSearch() {
+  window.clearTimeout(searchTimer);
+  state.query = '';
+  state.sort = state.userLocation ? 'distance' : 'name';
+  elements.search.value = '';
+  closeSuggestions();
+  elements.search.focus();
+  render();
+}
+
 function closeFilters() {
   document.body.classList.remove("filters-open");
 }
 
+function closeFilterMenus() {
+  document.querySelectorAll('.filter-disclosures details').forEach(details => { details.open = false; });
+}
+
 function bindEvents() {
-  let searchTimer;
   elements.search.addEventListener("input", (event) => {
     state.query = event.target.value;
+    state.sort = state.query.trim() ? 'relevance' : state.userLocation ? 'distance' : 'name';
     state.focusedOrganizationId = "";
     elements.clearSearch.hidden = !state.query;
     window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(() => { render(); fitResults(); }, 120);
+    if (event.isComposing) return;
+    searchTimer = window.setTimeout(() => { render(); renderSuggestions(); }, 250);
   });
-  elements.clearSearch.addEventListener("click", () => {
-    state.query = "";
-    elements.search.value = "";
-    elements.search.focus();
-    render();
-    fitResults();
+  elements.search.addEventListener('keydown', event => {
+    if (event.isComposing) return;
+    if (event.key === 'Enter') {
+      event.preventDefault(); submitSearch(suggestionIndex >= 0 && !elements.suggestions.hidden ? searchSuggestions[suggestionIndex] : null);
+    } else if (event.key === 'Escape') {
+      closeSuggestions();
+    } else if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      if (elements.suggestions.hidden) renderSuggestions();
+      if (!searchSuggestions.length || elements.suggestions.hidden) return;
+      suggestionIndex = (suggestionIndex + (event.key === 'ArrowDown' ? 1 : -1) + searchSuggestions.length) % searchSuggestions.length;
+      [...elements.suggestions.children].forEach((option, index) => {
+        option.setAttribute('aria-selected', String(index === suggestionIndex));
+        if (index === suggestionIndex) { elements.search.setAttribute('aria-activedescendant', option.id); option.scrollIntoView({ block: 'nearest' }); }
+      });
+    }
   });
+  elements.search.addEventListener('focus', () => { closeFilterMenus(); if (elements.search.value) renderSuggestions(); });
+  elements.search.addEventListener('blur', () => { window.clearTimeout(searchTimer); closeSuggestions(); });
+  elements.clearSearch.addEventListener('click', clearSearch);
   elements.state.addEventListener("change", (event) => {
     state.stateCode = event.target.value;
     render();
-    fitResults();
+    closeSuggestions();
+    const place = places.find(p => p.type === 'state' && p.code === state.stateCode);
+    if (place) fitPlace(place);
   });
   elements.radius.addEventListener("change", (event) => {
     state.radius = event.target.value;
@@ -723,8 +968,13 @@ function bindEvents() {
     } catch (error) { if (error.name !== "AbortError") showToast("Could not share this listing."); }
   });
   window.addEventListener("popstate", () => {
+    parseUrlState();
     const id = listingIdFromLocation();
     const organization = state.organizations.find(item => item.id === id || item.slug === id);
+    state.selectedOrganization = organization || null;
+    refreshCheckboxes();
+    render();
+    if (state.initialView && map?.setView) restoreMapView(state.initialView);
     if (organization) showDetails(organization, false);
     else {
       state.selectedOrganization = null;
@@ -747,6 +997,9 @@ function bindEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeFilters();
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!event.target.closest('.filter-disclosures')) closeFilterMenus();
   });
 }
 
@@ -780,8 +1033,11 @@ async function start() {
     initializeMap();
     mobileSheet = initializeMobileSheet();
     initializeControls();
+    initializeSearch();
     render();
-    fitResults();
+    if (state.initialView) restoreMapView(state.initialView);
+    else if (searchIntent().place) fitPlace(searchIntent().place);
+    else fitResults();
     focusLinkedOrganization();
     window.lucide?.createIcons();
   } catch (error) {

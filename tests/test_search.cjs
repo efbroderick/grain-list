@@ -8,11 +8,15 @@ function boot() {
   const nodes = new Map();
   function node() {
     return {
-      value: "", hidden: false, disabled: false, handlers: {}, options: {},
+      value: "", hidden: false, disabled: false, handlers: {}, options: {}, children: [], queries: new Map(),
       addEventListener(event, handler) { this.handlers[event] = handler; },
-      querySelector() { return node(); },
+      querySelector(selector) { if (!this.queries.has(selector)) this.queries.set(selector, node()); return this.queries.get(selector); },
       querySelectorAll() { return []; },
       setAttribute(name, value) { this[name] = value; },
+      removeAttribute(name) { delete this[name]; },
+      replaceChildren() { this.children = []; },
+      append(child) { this.children.push(child); },
+      scrollIntoView() {},
       showModal() { this.open = true; },
       close() { this.open = false; },
       focus() {},
@@ -34,15 +38,17 @@ function boot() {
     setTimeout(callback) { timers.set(++nextTimer, callback); return nextTimer; },
   };
   const document = {
+    body: {classList: {remove(){}}},
     querySelector(id) { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); },
     querySelectorAll() { return []; },
     createElement: node,
+    createDocumentFragment: node,
     addEventListener() {},
   };
   const context = vm.createContext({ window, document, URLSearchParams, URL });
   // Bind the real search handler without starting Leaflet or fetching the directory.
   const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8").replace(/start\(\);\s*$/, "");
-  vm.runInContext(`${source}\nrender = () => { syncControls(); updateUrl(); }; fitResults = () => {}; bindEvents();`, context);
+  vm.runInContext(`${source}\nglobalThis.fitCalls=0; render = () => { syncControls(); updateUrl(); }; fitResults = () => {fitCalls++}; bindEvents(); initializeSearch();`, context);
   return {
     input(value) {
       const input = nodes.get("#search-input");
@@ -61,6 +67,7 @@ function boot() {
     },
     clear() { nodes.get("#clear-search").handlers.click(); },
     clearHidden() { return nodes.get("#clear-search").hidden; },
+    key(key) { nodes.get('#search-input').handlers.keydown({key,preventDefault(){}}); },
     restoredQuery() {
       vm.runInContext("state.query = ''; parseUrlState(); syncControls();", context);
       return this.value();
@@ -171,4 +178,166 @@ test("named profile URLs resolve to the same organization overlay", () => {
   assert.equal(app.window.location.pathname, "/organizations/aspen-moon-farm/");
   app.run("closeDetails()");
   assert.equal(app.window.location.pathname, "/");
+});
+
+test('typing and clearing search never move the map; Enter moves it once', () => {
+  const app = boot();
+  app.input('Bakeries'); app.flush();
+  assert.equal(app.run('fitCalls'), 0);
+  app.key('Enter'); app.flush();
+  assert.equal(app.run('fitCalls'), 1);
+  app.clear(); app.flush();
+  assert.equal(app.run('fitCalls'), 1);
+});
+
+test('full state names and codes restrict geography rather than matching Company or address fragments', () => {
+  const app = boot();
+  app.run("state.organizations=[{name:'Mountain Mill',state:'CO',functions:[],grains:[],searchText:'mountain mill co wheat'}, {name:'Corn Company',state:'NC',functions:[],grains:[],searchText:'corn company nc wheat'}, {name:'Colorado Bread Co',state:'CA',functions:[],grains:[],searchText:'colorado bread co ca wheat'}]; initializeSearch();");
+  for (const query of ['Colorado', 'CO']) {
+    app.input(query); app.flush();
+    assert.equal(app.run('filteredOrganizations(true).map(o=>o.state).join()'), 'CO');
+  }
+  for (const query of ['North Carolina', 'NC']) {
+    app.input(query); app.flush();
+    assert.equal(app.run('filteredOrganizations(true).map(o=>o.state).join()'), 'NC');
+  }
+  app.input('Colorado Bread Co'); app.flush();
+  assert.equal(app.run('filteredOrganizations(true)[0].name'), 'Colorado Bread Co');
+});
+
+test('bakery plurals, punctuation, and accents match without arbitrary middle-of-word substrings', () => {
+  const app = boot();
+  for (const query of ['bakery', 'bakeries', 'bakers']) {
+    app.input(query); app.flush();
+    assert.equal(app.matches('retail baked goods baker wheat'), true);
+  }
+  app.input("Babettes"); app.flush();
+  assert.equal(app.matches("babettes bakery"), true);
+  app.input('cafe'); app.flush();
+  assert.equal(app.matches('café rye'), true);
+  app.input('nc'); app.flush();
+  assert.equal(app.matches('san francisco'), false);
+});
+
+test('city suggestions are disambiguated by state and near-place terms keep grain filters', () => {
+  const app = boot();
+  app.run("state.organizations=[{name:'Denver Mill',city:'Denver',state:'CO',location:{lat:39.7,lng:-104.9,precision:'address'},functions:['Wholesale Flour'],grains:['Wheat'],searchText:'denver mill wheat co'}, {name:'Portland Mill',city:'Portland',state:'OR',location:{lat:45,lng:-122,precision:'address'},functions:[],grains:['Rye'],searchText:'portland rye or'}, {name:'Portland Bread',city:'Portland',state:'ME',location:{lat:43,lng:-70,precision:'address'},functions:[],grains:['Wheat'],searchText:'portland wheat me'}]; initializeSearch(); state.grains.add('Wheat');");
+  app.input('wheat near Denver'); app.flush();
+  assert.equal(app.run('searchIntent().place.label'), 'Denver, CO');
+  assert.equal(app.run('searchIntent().terms.join()'), 'wheat');
+  assert.equal(app.run('state.grains.has("Wheat")'), true);
+  app.input('Portland'); app.flush();
+  assert.equal(app.run('searchIntent().place'), null);
+  app.input('Portland ME'); app.flush();
+  assert.equal(app.run('searchIntent().place.label'), 'Portland, ME');
+});
+
+test('suggestions support keyboard selection, dismissal, and safe text escaping', () => {
+  const app = boot();
+  app.run("state.organizations=[{name:'Farm <script>',state:'CO',city:'Boulder',functions:[],grains:[],searchText:'farm script',location:{lat:40,lng:-105,precision:'address'}}]; initializeSearch();");
+  app.input('Farm'); app.flush();
+  const suggestions = app.nodes.get('#search-suggestions');
+  assert.equal(suggestions.hidden, false);
+  assert.match(suggestions.children[0].innerHTML, /&lt;script&gt;/);
+  app.key('ArrowDown');
+  assert.equal(app.nodes.get('#search-input')['aria-activedescendant'], 'search-option-0');
+  app.key('Escape');
+  assert.equal(suggestions.hidden, true);
+  assert.equal(app.nodes.get('#search-input')['aria-activedescendant'], undefined);
+});
+
+test('name relevance outranks alphabetical incidental matches', () => {
+  const app = boot();
+  app.run("state.organizations=[{name:'A Farm',state:'CO',functions:[],grains:[],searchText:'a farm grain'}, {name:'Grain Mill',state:'CO',functions:[],grains:[],searchText:'grain mill'}, {name:'Grain',state:'CO',functions:[],grains:[],searchText:'grain'}]");
+  app.input('Grain'); app.flush();
+  assert.equal(app.run('filteredOrganizations(true).map(o=>o.name).join("|")'), 'Grain|Grain Mill|A Farm');
+});
+
+test('function and grain selection and chip removal preserve the map position', () => {
+  const app = boot();
+  app.run("renderCheckboxOptions(elements.functions,[['Grain Grower',2]],state.functions,'functions');");
+  app.nodes.get('#function-options').children[0].querySelector('input').handlers.change({target:{checked:true}});
+  assert.equal(app.run('state.functions.has("Grain Grower")'), true);
+  assert.equal(app.run('fitCalls'), 0);
+  app.run('renderActiveFilters()');
+  app.nodes.get('#active-filters').children[0].handlers.click();
+  assert.equal(app.run('state.functions.size'), 0);
+  assert.equal(app.run('fitCalls'), 0);
+});
+
+test('blur cancels delayed suggestion reopening and clear cancels pending input', () => {
+  const app = boot();
+  app.input('Boulder');
+  app.nodes.get('#search-input').handlers.blur();
+  app.flush();
+  assert.equal(app.nodes.get('#search-suggestions').hidden, true);
+  assert.equal(app.run('fitCalls'), 0);
+});
+
+test('empty area offers matching records elsewhere without discarding selected filters', () => {
+  const app = boot();
+  app.run("state.organizations=[{name:'Farm',state:'CO',functions:['Grain Grower'],grains:['Wheat'],searchText:'farm wheat',location:{lat:40,lng:-105}}]; state.functions.add('Grain Grower'); map={getBounds:()=>({contains:()=>false})}; renderViewportResults();");
+  const empty = app.nodes.get('#results-list').children[0];
+  assert.match(empty.innerHTML, /No matches in this area/);
+  const elsewhere = empty.children.find(b => b.textContent === 'Show matches elsewhere');
+  assert.ok(elsewhere);
+  elsewhere.handlers.click();
+  assert.equal(app.run('fitCalls'), 1);
+  assert.equal(app.run('state.functions.has("Grain Grower")'), true);
+});
+
+test('exact grain names are not mistaken for cities, and apostrophes do not prevent name matches', () => {
+  const app = boot();
+  app.run("state.organizations=[{name:'Farm',city:'Rye',state:'NY',functions:[],grains:['Rye'],searchText:'farm rye',location:{lat:41,lng:-73,precision:'address'}}]; initializeSearch();");
+  app.input('Rye'); app.flush();
+  assert.equal(app.run('searchIntent().place'), null);
+  app.input('Babettes'); app.flush();
+  assert.equal(app.matches("Babette's Bakery"), true);
+});
+
+test('shared map views retain valid coordinates and reject malformed coordinates', () => {
+  const app = boot();
+  app.run('map={getCenter:()=>({lat:39.75,lng:-104.98}), getZoom:()=>10}; updateUrl(); parseUrlState();');
+  assert.equal(app.run('state.initialView.join()'), '39.75,-104.98,10');
+  for (const view of ['999,0,4', '0,0,99', 'bad,0,4', '0,0']) {
+    app.setSearch(`?view=${view}`); app.run('parseUrlState()');
+    assert.equal(app.run('state.initialView'), null);
+  }
+});
+
+test('mobile results exclude map content concealed by the bottom sheet', () => {
+  const app = boot();
+  app.run("globalThis.L={latLngBounds:(a,b)=>({a,b})}; mobileSheet={inset:()=>300}; map={getSize:()=>({x:390,y:720}),containerPointToLatLng:p=>p,getBounds:()=>null};");
+  assert.equal(app.run('visibleMapBounds().b.join()'), '390,420');
+});
+
+test('history restores search and filters rather than keeping the last overlay state', () => {
+  const app = boot();
+  app.input('bakery'); app.flush();
+  app.setSearch('?q=rye&state=CO&functions=Grain%20Grower');
+  app.window.handlers.popstate();
+  assert.equal(app.value(), 'rye');
+  assert.equal(app.run('state.stateCode'), 'CO');
+  assert.equal(app.run('state.functions.has("Grain Grower")'), true);
+});
+
+test('explicit organization selection clears only conflicting filters and opens its profile', () => {
+  const app = boot();
+  app.run("showToast=message=>globalThis.notice=message; showDetails=o=>globalThis.openedName=o.name; state.stateCode='WA'; state.functions.add('Grain Grower'); state.grains.add('Wheat'); submitSearch({organization:{name:'Canyon Bakery',state:'CA',functions:['Retail Baked Goods'],grains:['Wheat']}});");
+  assert.equal(app.run('state.stateCode'), '');
+  assert.equal(app.run('state.functions.size'), 0);
+  assert.equal(app.run('state.grains.has("Wheat")'), true);
+  assert.equal(app.run('openedName'), 'Canyon Bakery');
+  assert.match(app.run('notice'), /Conflicting filters cleared/);
+});
+
+test('a submitted place replaces old geographic restrictions but keeps functions and grains', () => {
+  const app = boot();
+  app.run("state.organizations=[{name:'Mill',state:'CO',city:'Denver',functions:['Wholesale Flour'],grains:['Wheat'],searchText:'mill wheat',location:{lat:39.7,lng:-105,precision:'address'}}]; initializeSearch(); fitPlace=p=>globalThis.framed=p.label; state.stateCode='WA'; state.radius='50'; state.functions.add('Wholesale Flour'); state.grains.add('Wheat');");
+  app.input('wheat near Denver'); app.key('Enter');
+  assert.equal(app.run('framed'), 'Denver, CO');
+  assert.equal(app.run('state.stateCode'), '');
+  assert.equal(app.run('state.radius'), '');
+  assert.equal(app.run('state.functions.has("Wholesale Flour")'), true);
+  assert.equal(app.run('state.grains.has("Wheat")'), true);
 });
