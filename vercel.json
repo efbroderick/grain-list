@@ -3261,6 +3261,11 @@
       "permanent": true
     },
     {
+      "source": "/organizations/grain-d8b27ad077f315e4/",
+      "destination": "/organizations/rising-grace/",
+      "permanent": true
+    },
+    {
       "source": "/organizations/grain-d9562b98aa7f72d3/",
       "destination": "/organizations/organic-seed-alliance/",
       "permanent": true
