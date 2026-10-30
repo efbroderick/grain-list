@@ -3331,6 +3331,11 @@
       "permanent": true
     },
     {
+      "source": "/organizations/grain-dc379e6160646bd7/",
+      "destination": "/organizations/nomad-mill/",
+      "permanent": true
+    },
+    {
       "source": "/organizations/grain-dc5ae8f601c42d39/",
       "destination": "/organizations/rogers-farmstead/",
       "permanent": true
