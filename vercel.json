@@ -1486,6 +1486,11 @@
       "permanent": true
     },
     {
+      "source": "/organizations/grain-5f9e278f61d64784/",
+      "destination": "/organizations/flour-to-the-people/",
+      "permanent": true
+    },
+    {
       "source": "/organizations/grain-60c2527fe050f11b/",
       "destination": "/organizations/nightingale-bread/",
       "permanent": true
