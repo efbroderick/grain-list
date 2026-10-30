@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 import re
 from pathlib import Path
 
@@ -27,7 +28,13 @@ FUNCTION_TYPOS = {
     "Wholesale Whole Grains": "Wholesale Whole Grain",
     "Wholesale WholeGrain": "Wholesale Whole Grain",
 }
-NON_GRAINS = {"chickpea", "chickpeas", "garbanzo", "garbanzo beans", "lentil", "lentils", "soybean", "soybeans"}
+TAXONOMY = json.loads((Path(__file__).resolve().parents[1] / "config" / "taxonomy.json").read_text(encoding="utf-8"))
+NON_GRAINS = {"chickpea", "chickpeas", "garbanzo", "garbanzo beans", "lentil", "lentils", "soybean", "soybeans"} | set(TAXONOMY["disallowed_grains"])
+
+
+def standardize_category(value):
+    values = [TAXONOMY["category_aliases"].get(part.strip().lower(), part.strip()) for part in re.split(r"[,;\n]", value or "") if part.strip()]
+    return ", ".join(dict.fromkeys(values))
 
 
 def standardize_address(address):
@@ -59,8 +66,8 @@ def standardize_functions(value):
 
 def standardize_grains(value):
     values, seen = [], set()
-    for part in (value or "").split(","):
-        grain = part.strip()
+    for part in re.split(r"[,;\n]", value or ""):
+        grain = TAXONOMY["grain_aliases"].get(part.strip().lower(), part.strip())
         key = grain.casefold()
         if key and key not in NON_GRAINS and key not in seen:
             values.append(grain)
@@ -72,7 +79,9 @@ def standardize_rows(rows):
     result, changes = [], []
     for number, original in enumerate(rows, 2):
         row = dict(original)
-        for field, normalize in (("Address", standardize_address), ("Function", standardize_functions), ("Grains", standardize_grains)):
+        for field, normalize in (("Category", standardize_category), ("Address", standardize_address), ("Function", standardize_functions), ("Grains", standardize_grains)):
+            if field == "Category" and field not in row:
+                continue
             before = row.get(field, "")
             after = normalize(before)
             if before != after:

@@ -41,6 +41,19 @@ class ValidateGrainListDataTests(unittest.TestCase):
             [],
         )
 
+    def test_rejects_approved_aliases_and_non_grain_facility(self):
+        self.organization["category"] = "Baker, Miller"
+        self.organization["grains"] = ["Oat", "Edison Soft White Wheat", "ADM Milling facility"]
+        issues = validate_payload(payload_with(self.organization), ALLOWED_FUNCTIONS)
+        self.assertTrue(any("category contains" in issue for issue in issues))
+        self.assertEqual(sum("must use" in issue for issue in issues), 2)
+        self.assertTrue(any("non-grain" in issue for issue in issues))
+
+    def test_held_cultivar_names_are_not_reclassified(self):
+        self.organization["category"] = "Farm, Food Business"
+        self.organization["grains"] = ["Farro", "Sonora Wheat", "Sonoran Wheat", "Kamut", "Unknown Cultivar"]
+        self.assertEqual(validate_payload(payload_with(self.organization), ALLOWED_FUNCTIONS), [])
+
     def test_rejects_unsorted_functions(self):
         self.organization["functions"] = ["Retail Flour", "Grain Grower"]
         issues = validate_payload(payload_with(self.organization), ALLOWED_FUNCTIONS)

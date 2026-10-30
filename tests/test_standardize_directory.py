@@ -3,10 +3,28 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from standardize_directory import standardize_address, standardize_functions, standardize_grains, standardize_rows
+from standardize_directory import TAXONOMY, standardize_address, standardize_category, standardize_functions, standardize_grains, standardize_rows
 
 
 class StandardizeTests(unittest.TestCase):
+    def test_approved_category_aliases_preserve_multi_categories(self):
+        self.assertEqual(standardize_category("Baker, Miller; Bakery, Research"), "Baker, Mill, Research")
+        self.assertEqual(standardize_category("Distributor"), "Food Distributor")
+        self.assertEqual(standardize_category("Farm, Food Business, Food Producer"), "Farm, Food Business, Food Producer")
+
+    def test_every_approved_grain_alias_is_idempotent(self):
+        for before, after in TAXONOMY["grain_aliases"].items():
+            with self.subTest(alias=before):
+                self.assertEqual(standardize_grains(before), after)
+                self.assertEqual(standardize_grains(after), after)
+
+    def test_approved_grains_deduplicate_without_inference(self):
+        self.assertEqual(standardize_grains("Oat; oats; Milet, Millet\nEinkorn; Einkorn Wheat"), "Oats, Millet, Einkorn Wheat")
+        self.assertEqual(standardize_grains("WB9229 Hard Red Winter Wheat; Edison Soft White Wheat"), "WB9229 Hard Red Spring Wheat, Edison Hard White Spring Wheat")
+        self.assertEqual(standardize_grains("Gluten Free; ADM Milling facility; Rice"), "Rice")
+        held = "Farro, Sonora Wheat, Sonoran Wheat, Kamut, Patwin 515 Hard White Spring Wheat, Patwin-515HP Hard White Spring Wheat, Unknown Cultivar"
+        self.assertEqual(standardize_grains(held), held)
+
     def test_street_types_and_units(self):
         for before, after in (("11045 War Eagle Rd.", "11045 War Eagle Road"), ("5215 Industrial Dr S", "5215 Industrial Drive S"), ("2280 Ivy St Ste 130", "2280 Ivy Street Ste 130"), ("990 S. Arroyo Pkwy #1", "990 S. Arroyo Parkway #1"), ("11356 Rd. 5 1/2", "11356 Road 5 1/2")):
             self.assertEqual(standardize_address(before + ", Town, CA 90001"), after + ", Town, CA 90001")

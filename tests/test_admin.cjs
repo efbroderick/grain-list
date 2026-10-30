@@ -3,6 +3,18 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {fixture,domain,data,hash,allowed,clone,root,applyPublication}=require('./helpers/admin_fixture.cjs');
+test('admin embeds exactly the approved taxonomy configuration',()=>assert.deepEqual(clone(domain.taxonomy),require('../config/taxonomy.json')));
+test('admin normalizes approved category and grain aliases before saving',()=>{
+  const result=domain.normalize({...data,category:'Bakery, Miller',grains:['Oat','oats','Milet','Millet','Durum','Edison Soft White Wheat']},allowed);
+  assert.equal(result.category,'Baker, Mill');assert.deepEqual([...result.grains],['Oats','Millet','Durum Wheat','Edison Hard White Spring Wheat']);
+  const held=['Farro','Sonora Wheat','Sonoran Wheat','Kamut','Patwin 515 Hard White Spring Wheat','Patwin-515HP Hard White Spring Wheat','Unknown Cultivar'];
+  assert.deepEqual([...domain.normalize({...data,grains:held},allowed).grains],held);
+  assert.throws(()=>domain.normalize({...data,grains:['ADM Milling facility']},allowed),/grain names/);
+});
+test('admin canonical spelling covers every approved grain and category alias',()=>{
+  for(const [before,after] of Object.entries(require('../config/taxonomy.json').grain_aliases))assert.deepEqual([...domain.grains([before,after])],[after]);
+  for(const [before,after] of Object.entries(require('../config/taxonomy.json').category_aliases))assert.equal(domain.category(before),after);
+});
 test('admin browser script parses before deployment',()=>{const source=fs.readFileSync(path.join(root,'admin/apps-script/Client.html'),'utf8');assert.doesNotThrow(()=>new (require('node:vm').Script)(source.replace(/^<script>\s*/, '').replace(/<\/script>\s*$/, '')));});
 
 test('draft save hashes only its selected record and reads each source tab once',()=>{

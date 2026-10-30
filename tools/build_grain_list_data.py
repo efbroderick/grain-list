@@ -14,7 +14,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 import requests
-from standardize_directory import standardize_address, standardize_functions, standardize_grains
+from standardize_directory import standardize_address, standardize_category, standardize_functions, standardize_grains
 
 
 DEFAULT_INPUT = Path("data/publication_list.csv")
@@ -459,7 +459,7 @@ def organization_payload(row: dict, cache: dict) -> dict:
     return {
         "id": row_public_identifier(row),
         "name": row.get("Name", ""),
-        "category": row.get("Category", ""),
+        "category": standardize_category(row.get("Category", "")),
         "state": row.get("State", ""),
         "city": row.get("City", "") or (parsed_address["city"] if parsed_address else ""),
         "functions": split_values(standardize_functions(row.get("Function", ""))),

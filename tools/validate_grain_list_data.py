@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 from urllib.parse import urlparse
-from standardize_directory import NON_GRAINS
+from standardize_directory import NON_GRAINS, TAXONOMY, standardize_category
 
 DEFAULT_DATA = Path("data/organizations.json")
 DEFAULT_CONFIG = Path("config/functions.json")
@@ -49,6 +49,8 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
             issues.append(f"{label}: internal fields exposed: {', '.join(sorted(leaked))}")
         if not str(organization.get("name", "")).strip():
             issues.append(f"row {index}: name is blank")
+        if standardize_category(organization.get("category", "")) != organization.get("category", ""):
+            issues.append(f"{label}: category contains an unnormalized approved alias")
 
         for function in organization.get("functions", []):
             if function not in allowed_functions:
@@ -61,6 +63,12 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
         for grain in organization.get("grains", []):
             if grain.strip().casefold() in NON_GRAINS:
                 issues.append(f"{label}: non-grain in Grains '{grain}'")
+            canonical = TAXONOMY["grain_aliases"].get(grain.lower(), grain)
+            if canonical != grain:
+                issues.append(f"{label}: grain '{grain}' must use '{canonical}'")
+        grains = organization.get("grains", [])
+        if len(grains) != len({g.casefold() for g in grains}):
+            issues.append(f"{label}: duplicate grains")
 
         for field in ("url",):
             value = str(organization.get(field, "")).strip()

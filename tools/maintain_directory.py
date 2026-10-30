@@ -17,7 +17,7 @@ from build_grain_list_data import (
     split_values, write_cache, row_public_identifier, sheet_coordinates,
 )
 from validate_grain_list_data import validate_payload, valid_web_url
-from standardize_directory import standardize_functions, standardize_grains
+from standardize_directory import standardize_category, standardize_functions, standardize_grains
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SHEET = "https://docs.google.com/spreadsheets/d/1zhNRetv5gNYuaQtlZ8hxsW7GBdX7VpMbSN9boXkuYT8/edit"
@@ -52,6 +52,7 @@ def read_source(path):
         if current_listings:
             row["Status"] = row.get("Status") or "Partial"
             row["Operational Status"] = row.get("Operational Status") or "Active"
+        row["Category"] = standardize_category(row.get("Category", ""))
         row["Function"] = standardize_functions(row.get("Function", ""))
         row["Grains"] = standardize_grains(row.get("Grains", ""))
     return rows, headers
