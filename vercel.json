@@ -3686,6 +3686,11 @@
       "permanent": true
     },
     {
+      "source": "/organizations/grain-f1848a4c6c14c0c4/",
+      "destination": "/organizations/the-canyon-bakery/",
+      "permanent": true
+    },
+    {
       "source": "/organizations/grain-f1d1ea6db458d731/",
       "destination": "/organizations/the-flour-district/",
       "permanent": true
