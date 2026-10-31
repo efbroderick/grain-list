@@ -35,6 +35,7 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
         return ["organizations must be a list"]
 
     ids: set[str] = set()
+    location_ids: set[str] = set()
     for index, organization in enumerate(organizations, start=1):
         label = organization.get("name") or f"row {index}"
         identifier = str(organization.get("id", ""))
@@ -69,6 +70,30 @@ def validate_payload(payload: dict, allowed_functions: set[str]) -> list[str]:
         grains = organization.get("grains", [])
         if len(grains) != len({g.casefold() for g in grains}):
             issues.append(f"{label}: duplicate grains")
+
+        if "locations" in organization:
+            branches = organization["locations"]
+            if not isinstance(branches, list) or not 1 <= len(branches) <= 40:
+                issues.append(f"{label}: locations must contain 1-40 linked records")
+                branches = []
+            if not any(l.get("operationalStatus") == "Active" for l in branches):
+                issues.append(f"{label}: no active location")
+            allowed_location_fields = {"id", "name", "type", "address", "city", "state", "phone", "email", "url", "functions", "grains", "sources", "operationalStatus", "location"}
+            for branch in branches:
+                branch_id = str(branch.get("id", ""))
+                if not re.fullmatch(r"loc-[a-f0-9]{16}(?:[a-f0-9]{16})?", branch_id) or branch_id in location_ids:
+                    issues.append(f"{label}: invalid or duplicate Location ID")
+                location_ids.add(branch_id)
+                if set(branch) - allowed_location_fields:
+                    issues.append(f"{label}: private or unsupported location fields")
+                if branch.get("operationalStatus") not in {"Active", "Closed"}:
+                    issues.append(f"{label}: invalid location status")
+                if branch.get("operationalStatus") == "Active":
+                    child = {**branch, "category": "", "status": "Partial"}
+                    child_payload = {"organizations": [child], "summary": {"total": 1, "mapped": int(bool(child.get("location"))), "verified": 0}}
+                    issues.extend(f"{label} / {error}" for error in validate_payload(child_payload, allowed_functions))
+                    if not branch.get("sources"):
+                        issues.append(f"{label}: active location needs supporting sources")
 
         for field in ("url",):
             value = str(organization.get(field, "")).strip()

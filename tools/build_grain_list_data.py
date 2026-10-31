@@ -497,6 +497,9 @@ def main() -> None:
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
 
+    if args.output.exists() and any(row.get("locations") for row in json.loads(args.output.read_text()).get("organizations", [])):
+        raise SystemExit("Refusing a Listings-only rebuild: the output contains linked locations. Publish through the admin to preserve branch records.")
+
     with args.input.open(newline="", encoding="utf-8") as file:
         rows = list(csv.DictReader(file))
     cache = read_cache(args.cache)

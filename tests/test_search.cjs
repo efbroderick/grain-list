@@ -78,6 +78,27 @@ function boot() {
   };
 }
 
+function branchSearchFixture(app) {
+  app.run(`state.organizations=[{id:'grain-1111111111111111',name:'Two Branch Mill',state:'CO',city:'Denver',functions:['Wholesale Flour'],grains:['Rye'],searchText:'two branch mill denver colorado portland oregon rye',locations:[{id:'loc-1111111111111111',name:'Denver',state:'CO',city:'Denver',operationalStatus:'Active',location:{lat:39.74,lng:-104.99,precision:'address'}},{id:'loc-2222222222222222',name:'Portland',state:'OR',city:'Portland',operationalStatus:'Active',location:{lat:45.52,lng:-122.67,precision:'address'}},{id:'loc-3333333333333333',name:'Closed',state:'CA',city:'Los Angeles',operationalStatus:'Closed',location:{lat:34.05,lng:-118.24,precision:'address'}}]}];initializeSearch();`);
+}
+test('multi-location organizations appear once when any active branch is in the area',()=>{
+  const app=boot();branchSearchFixture(app);app.run(`map={getBounds:()=>({contains:([lat,lng])=>lng < -120})};`);
+  assert.equal(app.run('filteredOrganizations().length'),1);assert.equal(app.run('filteredOrganizations()[0].displayLocation.name'),'Portland');assert.equal(app.run('filteredOrganizations()[0].visibleLocationCount'),1);
+  app.run(`map={getBounds:()=>({contains:([lat,lng])=>lat < 35})};`);assert.equal(app.run('filteredOrganizations().length'),0);
+});
+test('state and city search match additional branches rather than only the primary address',()=>{
+  const app=boot();branchSearchFixture(app);app.input('Portland Oregon');app.flush();assert.equal(app.run('filteredOrganizations(true).length'),1);assert.equal(app.run('filteredOrganizations(true)[0].displayLocation.name'),'Portland');
+  app.input('');app.flush();app.run(`state.stateCode='CA'`);assert.equal(app.run('filteredOrganizations(true).length'),0);
+});
+test('distance and radius use the nearest active branch and exclude closed branches',()=>{
+  const app=boot();branchSearchFixture(app);app.run(`state.userLocation={lat:45.52,lng:-122.67};state.radius='10';state.sort='distance'`);
+  assert.equal(app.run('filteredOrganizations(true)[0].distance'),0);assert.equal(app.run('filteredOrganizations(true)[0].displayLocation.name'),'Portland');
+  app.run(`state.userLocation={lat:34.05,lng:-118.24}`);assert.equal(app.run('filteredOrganizations(true).length'),0);
+});
+test('an exact organization name does not broaden into grain and function keywords',()=>{
+  const app=boot();app.run(`state.organizations=[{id:'one',name:'Rye Goods',state:'CA',functions:['Retail Baked Goods'],grains:['Rye'],searchText:'rye goods'},{id:'two',name:'Other Bakery',state:'CA',functions:['Retail Baked Goods'],grains:['Rye'],searchText:'other bakery retail baked goods rye'}];initializeSearch();`);app.input('Rye Goods');app.flush();assert.equal(app.run('filteredOrganizations(true).length'),1);
+});
+
 test("a pause after a space does not join the next word to the previous one", () => {
   const app = boot();
   app.input("40 ");

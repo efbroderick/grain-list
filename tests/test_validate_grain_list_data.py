@@ -41,6 +41,26 @@ class ValidateGrainListDataTests(unittest.TestCase):
             [],
         )
 
+    def test_linked_locations_validate_sources_coordinates_and_private_fields(self):
+        branch = {"id": "loc-1111111111111111", "name": "Denver", "type": "Mill", "state": "CO", "functions": [], "grains": [], "sources": ["https://examplemill.com/locations"], "operationalStatus": "Active", "location": {"lat": 39.7, "lng": -104.9, "precision": "address"}}
+        self.organization["locations"] = [branch]
+        self.assertEqual(validate_payload(payload_with(self.organization), ALLOWED_FUNCTIONS), [])
+        branch["notes"] = "private"
+        branch["sources"] = []
+        branch["location"]["lat"] = 100
+        issues = validate_payload(payload_with(self.organization), ALLOWED_FUNCTIONS)
+        self.assertTrue(any("private or unsupported location fields" in issue for issue in issues))
+        self.assertTrue(any("supporting sources" in issue for issue in issues))
+        self.assertTrue(any("coordinate bounds" in issue for issue in issues))
+
+    def test_location_ids_cannot_be_shared_by_two_organizations(self):
+        branch = {"id": "loc-1111111111111111", "name": "Denver", "functions": [], "grains": [], "sources": ["https://examplemill.com/locations"], "operationalStatus": "Active", "location": self.organization["location"]}
+        self.organization["locations"] = [branch]
+        payload = payload_with(self.organization)
+        payload["organizations"].append({**self.organization, "id": "grain-other"})
+        payload["summary"] = {"total": 2, "mapped": 2, "verified": 2}
+        self.assertTrue(any("duplicate Location ID" in issue for issue in validate_payload(payload, ALLOWED_FUNCTIONS)))
+
     def test_rejects_approved_aliases_and_non_grain_facility(self):
         self.organization["category"] = "Baker, Miller"
         self.organization["grains"] = ["Oat", "Edison Soft White Wheat", "ADM Milling facility"]

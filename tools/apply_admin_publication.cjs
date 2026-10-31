@@ -7,7 +7,7 @@ const context = { module: { exports: {} } };
 vm.runInNewContext(fs.readFileSync(path.join(root,'admin/apps-script/Domain.gs'),'utf8'),context);
 const domain = context.module.exports;
 const allowed = require('../config/functions.json').allowed_functions;
-const PUBLIC_FIELDS = ['id','name','category','state','city','functions','grains','address','phone','email','url','status','sources','location'];
+const PUBLIC_FIELDS = ['id','name','category','state','city','functions','grains','address','phone','email','url','status','sources','location','locations'];
 const digest = value => createHash('sha256').update(value).digest('hex');
 
 function applyPublication(current, input, requestId) {
@@ -21,10 +21,11 @@ function applyPublication(current, input, requestId) {
   }
   for (const record of input.upserts) {
     if (!/^grain-[a-f0-9]{16}$/.test(record.id) || Object.keys(record).some(k=>!PUBLIC_FIELDS.includes(k))) throw new Error('Private or invalid fields in admin publication');
-    const normalized = domain.normalize({...record,locationChecked:true},allowed);
+    if(record.locations)for(const branch of record.locations)if(Object.keys(branch).some(k=>!['id','name','type','state','city','functions','grains','address','phone','email','url','sources','operationalStatus','location'].includes(k)))throw new Error('Private or invalid location fields');
+    const normalized = domain.normalize({...record,locationChecked:true,...(record.locations?{locations:record.locations.map(l=>({...l,locationChecked:true}))}:{})},allowed);
     domain.assertPublish(normalized,[...records.values()].map(o=>({...o,recordId:o.id})),record.id);
     const clean = JSON.parse(JSON.stringify(domain.toPublic(normalized,record.id,record.status)));
-    if (Object.keys(clean).length!==PUBLIC_FIELDS.length) throw new Error('Incomplete public record');
+    if (Object.keys(clean).length!==(record.locations?PUBLIC_FIELDS.length:PUBLIC_FIELDS.length-1)) throw new Error('Incomplete public record');
     records.set(record.id,clean);
   }
   if (!records.size) throw new Error('Refusing to publish an empty directory');

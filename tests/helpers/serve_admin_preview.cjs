@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {fixture}=require('./admin_fixture.cjs');
 const f=fixture(), root=path.join(__dirname,'../../admin/apps-script');
+f.env.researchPages['https://sample.com/']='<p>Our farm grows Rye. We grow Hard Red Winter Wheat. Our contact is info@sample.com.</p>';
 const sheet=f.tables.get('Listings'),second=[...sheet.rows[1]];
 for(const [column,value] of Object.entries({Name:'Second Farm','Record ID':'org-second','Public ID':'grain-abcdefabcdefabcd'}))second[f.headers.indexOf(column)]=value;
 sheet.rows.push(second);
@@ -21,7 +22,7 @@ http.createServer((req,res)=>{
   }
   if(req.method==='POST'&&req.url==='/rpc'){
     let body='';req.on('data',chunk=>{body+=chunk;if(body.length>100000)req.destroy();});req.on('end',async()=>{
-      res.setHeader('Content-Type','application/json');try{const input=JSON.parse(body);if(!['getAdminState','initializeAdmin','saveAdminDraft','publishAdminDraft','getAdminPublicationStatus','lookupAdminAddress'].includes(input.method))throw new Error('Unsupported test method');
+      res.setHeader('Content-Type','application/json');try{const input=JSON.parse(body);if(!['getAdminState','initializeAdmin','saveAdminDraft','publishAdminDraft','getAdminPublicationStatus','lookupAdminAddress','researchAdminOrganization'].includes(input.method))throw new Error('Unsupported test method');
         if(delay&&input.method!=='getAdminState')await new Promise(resolve=>setTimeout(resolve,delay));
         if(failNext&&input.method==='saveAdminDraft'){failNext=false;throw new Error('Simulated temporary connection failure');}
         const result=f.context[input.method](...input.args);

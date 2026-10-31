@@ -70,6 +70,7 @@ function live_() {
 function schema_() {return JSON.parse(HtmlService.createHtmlOutputFromFile('Schema').getContent());}
 function readRecords_(table,recordId) {
   table=table||table_(ADMIN_TAB_);var seen={}, publicIds={};
+  var linked=locationRows_(recordId);
   if(GrainAdminDomain.extraHeaders.some(function(h){return table.headers.indexOf(h)<0;}))throw new Error('Initialize the admin connection first.');
   var rows=sheetObjects_(table).filter(function(r){return r.Name;});
   rows.forEach(function(r){
@@ -88,9 +89,13 @@ function readRecords_(table,recordId) {
     o.operationalStatus=o.operationalStatus==='Closed'?'Closed':'Active';
     o.location=r.Latitude!==''&&r.Longitude!==''?{lat:Number(r.Latitude),lng:Number(r.Longitude),precision:r['Location Precision']}:null;
     o.locationChecked=!!o.location && r['Map Fingerprint']===hash_(GrainAdminDomain.mapKey(o));
+    var branches=linked.filter(function(l){return l.recordId===o.recordId;});
+    if(branches.some(function(l){return l.publicId!==id;}))throw new Error('A location links to conflicting organization IDs.');
+    if(branches.length)o.locations=branches.map(function(l){return l.data;}).sort(function(a,b){return a.name.localeCompare(b.name);});
     o.revision=sourceRevision_(o);
     return o;
   });
+  if(!recordId&&linked.some(function(l){return !seen[l.recordId]||!publicIds[l.publicId];}))throw new Error('A location has no matching organization in Listings.');
   var ids=records.map(function(r){return r.publicId;});if(new Set(ids).size!==ids.length)throw new Error('Two source rows use the same Public ID. Resolve the identity conflict first.');
   return {table:table,records:records};
 }
@@ -144,6 +149,7 @@ function saveAdminDraft(request) {
   owner_();return lock_(function(){
     var input=request||{}, current=input.recordId?readRecords_(null,input.recordId):{records:[]}, data=GrainAdminDomain.normalize(input.data,schema_().allowed_functions,true), table=table_(DRAFT_TAB_), draftList=drafts_(table);
     var prior=draftList.find(function(d){return d.draftId===input.draftId;}), row=current.records.find(function(r){return r.recordId===input.recordId;});
+    if(row&&row.locations&&!data.locations)throw new Error('This organization has linked locations. Reload the current admin before saving.');
     if(input.recordId && !row && !prior)throw new Error('This source record no longer exists. Reload the directory.');
     if(row && row.revision!==input.baseRevision)throw new Error('The Google Sheet changed since you opened this record. Reload before saving.');
     if(input.draftId && !/^[a-f0-9-]{36}$/.test(input.draftId))throw new Error('Invalid draft identity.');
@@ -167,7 +173,8 @@ function writeOrganization_(draft,current) {
   Object.keys(GrainAdminDomain.fields).forEach(function(k){var v=o[k];fields[GrainAdminDomain.fields[k]]=Array.isArray(v)?v.join(k==='sources'?'; ':', '):v;});
   Object.assign(fields,{'Record ID':draft.recordId,'Public ID':draft.publicId,'Latitude':o.location?o.location.lat:'','Longitude':o.location?o.location.lng:'','Location Precision':o.location?o.location.precision:'','Map Fingerprint':o.locationChecked?hash_(GrainAdminDomain.mapKey(o)):''});
   if(!row && table.headers.indexOf('Grain List Profile')>=0)fields['Grain List Profile']=origin_()+'/organizations/'+draft.publicId+'/';
-  if(row) {
+  if(o.locations){if(!row)fields.Status='Partial';writeOrganizationLocations_(draft,current,fields);}
+  else if(row) {
     // Re-resolve the ID immediately before writing; never trust a client row number.
     var fresh=readRecords_(null,draft.recordId).records[0];
     if(!fresh || fresh.revision!==draft.baseRevision)throw new Error('The Sheet changed before save. Reload this draft.');

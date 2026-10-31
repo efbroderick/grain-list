@@ -66,6 +66,7 @@ const state = {
   userLocation: null,
   focusedOrganizationId: "",
   selectedOrganization: null,
+  selectedLocationId: '',
   initialView: null,
 };
 
@@ -97,9 +98,31 @@ function searchWords(value) {
   return normalized(value).split(' ').filter(Boolean).map(word => SEARCH_WORDS[word] || word);
 }
 
+function organizationLocations(o) {
+  if (Array.isArray(o.locations)) return o.locations.filter(l => l.operationalStatus !== 'Closed').sort((a,b) => a.name.localeCompare(b.name));
+  return [{id: `loc-${String(o.id || '').replace(/^grain-/, '')}`, name: o.city || 'Main location', address:o.address, city:o.city, state:o.state, phone:o.phone, email:o.email, url:o.url, location:o.location, sources:o.sources, functions:[], grains:[]}];
+}
+
+function matchingLocations(o, bounds = null) {
+  const place = searchIntent().place;
+  return organizationLocations(o).filter(l => {
+    if (state.stateCode && l.state !== state.stateCode) return false;
+    if (place && (l.state !== place.code || (place.type === 'city' && normalized(l.city) !== normalized(place.city)))) return false;
+    if (state.radius && state.userLocation && (!hasDistancePrecision(l) || distanceMiles(state.userLocation,l.location) > Number(state.radius))) return false;
+    return !bounds || (l.location && bounds.contains([l.location.lat,l.location.lng]));
+  });
+}
+
+function selectedLocation(o) {
+  const locations = organizationLocations(o);
+  return locations.find(l => l.id === state.selectedLocationId) || o.displayLocation || locations[0];
+}
+
+function markerFor(o,l) { return markersById.get(l ? `${o.id}/${l.id}` : o.id); }
+
 function initializeSearch() {
   const cities = new Map();
-  for (const o of state.organizations) {
+  for (const o of state.organizations.flatMap(organizationLocations)) {
     if (!o.city || !o.location || o.location.precision === 'state') continue;
     const key = `${normalized(o.city)}|${o.state}`;
     if (!cities.has(key)) cities.set(key, { type: 'city', city: o.city, code: o.state, label: `${o.city}, ${o.state}` });
@@ -180,7 +203,7 @@ function renderSuggestions() {
 }
 
 function fitPlace(place) {
-  const organizations = state.organizations.filter(o => o.state === place.code && (place.type === 'state' || normalized(o.city) === normalized(place.city)) && o.location);
+  const organizations = state.organizations.flatMap(organizationLocations).filter(o => o.state === place.code && (place.type === 'state' || normalized(o.city) === normalized(place.city)) && o.location);
   if (!organizations.length) return false;
   const bounds = L.latLngBounds(organizations.map(o => [o.location.lat, o.location.lng]));
   frameBounds(bounds, place.type === 'city' ? 10 : 7);
@@ -197,10 +220,10 @@ function submitSearch(suggestion) {
   if (place) { state.stateCode = ''; state.radius = ''; }
   let cleared = false;
   if (o) {
-    if (state.stateCode && state.stateCode !== o.state) { state.stateCode = ''; cleared = true; }
+    if (state.stateCode && !organizationLocations(o).some(l => state.stateCode === l.state)) { state.stateCode = ''; cleared = true; }
     if (!matchesSelection(o.functions, state.functions)) { state.functions.clear(); cleared = true; }
     if (!matchesSelection(o.grains, state.grains)) { state.grains.clear(); cleared = true; }
-    if (state.radius && state.userLocation && (!hasDistancePrecision(o) || distanceMiles(state.userLocation, o.location) > Number(state.radius))) { state.radius = ''; cleared = true; }
+    if (state.radius && state.userLocation && !organizationLocations(o).some(l => hasDistancePrecision(l) && distanceMiles(state.userLocation,l.location) <= Number(state.radius))) { state.radius = ''; cleared = true; }
     if (cleared) refreshCheckboxes();
   }
   closeSuggestions();
@@ -341,6 +364,7 @@ function parseUrlState() {
   const view = params.get('view')?.split(',').map(Number);
   state.initialView = view?.length === 3 && view.every(Number.isFinite) && Math.abs(view[0]) <= 85 && Math.abs(view[1]) <= 180 && view[2] >= 2 && view[2] <= 16 ? view : null;
   state.focusedOrganizationId = listingIdFromLocation();
+  state.selectedLocationId = params.get('location') || '';
 }
 
 function updateUrl() {
@@ -350,6 +374,7 @@ function updateUrl() {
   if (state.functions.size) params.set("functions", [...state.functions].sort().join("|"));
   if (state.grains.size) params.set("grains", [...state.grains].sort().join("|"));
   if (state.radius && state.userLocation) params.set("radius", state.radius);
+  if (state.selectedOrganization && state.selectedLocationId && organizationLocations(state.selectedOrganization).length>1) params.set('location',state.selectedLocationId);
   if (map?.getCenter && map?.getZoom) {
     const inset = mobileSheet?.inset() || 0;
     const size = inset && map.getSize?.();
@@ -396,7 +421,7 @@ function renderCheckboxOptions(container, entries, selected, key) {
 }
 
 function initializeControls() {
-  const states = [...new Set(state.organizations.map((item) => item.state).filter(Boolean))].sort();
+  const states = [...new Set(state.organizations.flatMap(organizationLocations).map((item) => item.state).filter(Boolean))].sort();
   for (const stateCode of states) {
     const option = document.createElement("option");
     option.value = stateCode;
@@ -427,8 +452,10 @@ function syncControls() {
 
 function matchesQuery(organization) {
   if (!state.query) return true;
+  const exactName = normalized(state.query);
+  if (exactName.includes(' ') && state.organizations.some(o => normalized(o.name) === exactName)) return normalized(organization.name) === exactName;
   const { place, terms } = searchIntent();
-  if (place?.type === 'state' && organization.state !== place.code) return false;
+  if (place?.type === 'state' && !organizationLocations(organization).some(l => l.state === place.code)) return false;
   const words = searchWords(organization.searchText);
   return terms.every(term => words.some(word => word === term || (term.length >= 3 && word.startsWith(term))));
 }
@@ -442,24 +469,16 @@ function filteredOrganizations(ignoreBounds = false) {
   const radius = state.userLocation && state.radius ? Number(state.radius) : null;
   const results = state.organizations.filter((organization) => {
     if (!matchesQuery(organization)) return false;
-    if (state.stateCode && organization.state !== state.stateCode) return false;
     if (!matchesSelection(organization.functions, state.functions)) return false;
     if (!matchesSelection(organization.grains, state.grains)) return false;
-    if (radius) {
-      if (!hasDistancePrecision(organization)) return false;
-      if (distanceMiles(state.userLocation, organization.location) > radius) return false;
-    }
-    if (bounds) {
-      if (!organization.location) return false;
-      if (!bounds.contains([organization.location.lat, organization.location.lng])) return false;
-    }
-    return true;
+    return matchingLocations(organization,bounds).length > 0;
   });
 
   for (const organization of results) {
-    organization.distance = state.userLocation && hasDistancePrecision(organization)
-      ? distanceMiles(state.userLocation, organization.location)
-      : null;
+    const branches = matchingLocations(organization,bounds);
+    organization.displayLocation = state.userLocation ? [...branches].sort((a,b) => (hasDistancePrecision(a)?distanceMiles(state.userLocation,a.location):Infinity)-(hasDistancePrecision(b)?distanceMiles(state.userLocation,b.location):Infinity))[0] : branches[0];
+    organization.distance = state.userLocation && hasDistancePrecision(organization.displayLocation) ? distanceMiles(state.userLocation,organization.displayLocation.location) : null;
+    organization.visibleLocationCount = branches.length;
   }
   results.sort((a, b) => {
     if (state.sort === "distance" && state.userLocation) {
@@ -486,18 +505,21 @@ function renderMarkers(organizations) {
   markerLayer.clearLayers();
   markersById.clear();
   for (const organization of organizations) {
-    if (!organization.location) continue;
+    for (const branch of matchingLocations(organization)) {
+    if (!branch.location) continue;
     const marker = L.marker(
-      [organization.location.lat, organization.location.lng],
-      { icon: organizationIcon(organization), title: organization.name },
+      [branch.location.lat, branch.location.lng],
+      { icon: organizationIcon(branch.functions?.length?branch:organization), title: organization.name },
     );
-    const tooltip = locationNote(organization)
-      ? `${organization.name} · approximate location`
-      : organization.name;
+    const multiple = organizationLocations(organization).length > 1;
+    const approximate = locationNote(branch) ? ' · approximate location' : '';
+    const tooltip = `<span class="location-tooltip-name">${escapeHtml(organization.name)}${multiple?'':approximate}</span>${multiple?`<span class="location-tooltip-branch">${escapeHtml(branch.name)}${approximate}</span>`:''}`;
     marker.bindTooltip(tooltip, { direction: "top", offset: [0, -14] });
-    marker.on("click", () => showDetails(organization));
-    markersById.set(organization.id, marker);
+    marker.on("click", () => showDetails(organization,true,branch.id));
+    markersById.set(`${organization.id}/${branch.id}`, marker);
+    if(!markersById.has(organization.id))markersById.set(organization.id,marker);
     markerLayer.addLayer(marker);
+    }
   }
   elements.mapEmpty.hidden = markersById.size !== 0;
 }
@@ -515,7 +537,9 @@ function resultItem(organization) {
     event.preventDefault();
     showDetails(organization);
   });
-  const locationText = organization.address || `${organization.state} · Approximate location`;
+  const branch = organization.displayLocation || organizationLocations(organization)[0];
+  const totalLocations = organizationLocations(organization).length;
+  const locationText = (branch?.address || `${branch?.state || organization.state} · Approximate location`) + (totalLocations > 1 ? ` · ${organization.visibleLocationCount || totalLocations} of ${totalLocations} locations` : '');
   const distance = organization.distance == null ? "" : `${organization.distance.toFixed(organization.distance < 10 ? 1 : 0)} mi`;
   const functionText = organization.functions.length
     ? organization.functions.slice(0, 2).join(" · ")
@@ -555,36 +579,44 @@ function webLink(value) {
   catch { return ""; }
 }
 
-function showDetails(organization, pushHistory = true) {
+function showDetails(organization, pushHistory = true, locationId = '') {
   const previous = state.selectedOrganization;
   const returnUrl = window.history.state?.returnUrl || `${window.location.pathname}${window.location.search}`;
   state.selectedOrganization = organization;
+  const branches = organizationLocations(organization);
+  state.selectedLocationId = locationId || new URLSearchParams(window.location.search).get('location') || organization.displayLocation?.id || branches[0]?.id || '';
+  const branch = selectedLocation(organization);
+  state.selectedLocationId = branch?.id || '';
   state.focusedOrganizationId = "";
   elements.detailName.textContent = organization.name;
   elements.detailCategory.textContent = [organization.category, organization.state].filter(Boolean).join(" · ");
   const section = (title, content) => `<section class="detail-section"><h3>${title}</h3>${content}</section>`;
-  const tags = (values, grain = false) => `<div class="tag-list">${values.map(value => `<span class="tag${grain ? " grain" : ""}">${escapeHtml(value)}</span>`).join("")}</div>`;
+  const tags = (values, grain = false) => `<div class="tag-list">${[...values].sort((a,b)=>a.localeCompare(b)).map(value => `<span class="tag${grain ? " grain" : ""}">${escapeHtml(value)}</span>`).join("")}</div>`;
   const content = [];
   if (organization.functions.length) content.push(section("Functions", tags(organization.functions)));
   if (organization.grains.length) content.push(section("Grains", tags(organization.grains, true)));
-  const note = locationNote(organization);
+  if(branches.length>1)content.push(section('Locations',`<div class="profile-locations">${branches.map(l=>`<button type="button" class="profile-location${l.id===branch?.id?' is-selected':''}" data-profile-location="${escapeHtml(l.id)}" aria-pressed="${l.id===branch?.id}"><span>${escapeHtml(l.name)}<small>${escapeHtml([l.city,l.state].filter(Boolean).join(', '))}</small></span>${l.id===branch?.id?'<i data-lucide="check" aria-hidden="true"></i>':''}</button>`).join('')}</div>`));
+  const note = locationNote(branch || organization);
   if (note) content.push(section("Map location", `<p class="location-note">${escapeHtml(note)}</p>`));
   const contact = [
-    organization.address ? `<p>${escapeHtml(organization.address)}</p>` : "",
-    /\bP\.?\s*O\.?\s*Box\b/i.test(organization.address) ? '<p class="location-note">Mailing address, not a visitor address.</p>' : "",
-    organization.phone ? `<a href="tel:${escapeHtml(organization.phone.replace(/[^\d+]/g, ""))}">${escapeHtml(organization.phone)}</a>` : "",
-    organization.email ? `<a href="mailto:${escapeHtml(organization.email)}">${escapeHtml(organization.email)}</a>` : "",
+    branches.length>1 ? `<p>${escapeHtml(branch?.name)}</p>` : '',
+    branch?.address ? `<p>${escapeHtml(branch.address)}</p>` : "",
+    /\bP\.?\s*O\.?\s*Box\b/i.test(branch?.address) ? '<p class="location-note">Mailing address, not a visitor address.</p>' : "",
+    branch?.phone ? `<a href="tel:${escapeHtml(branch.phone.replace(/[^\d+]/g, ""))}">${escapeHtml(branch.phone)}</a>` : "",
+    branch?.email ? `<a href="mailto:${escapeHtml(branch.email)}">${escapeHtml(branch.email)}</a>` : "",
   ].join("");
-  if (contact) content.push(section("Contact", `<div class="contact-list">${contact}</div>`));
-  const sources = organization.sources.filter(webLink);
+  if (contact) content.push(section(branches.length>1?'Selected location':"Contact", `<div class="contact-list selected-location-contact">${contact}</div>`));
+  const sources = [...new Set([...organization.sources,...(branch?.sources || [])])].filter(webLink);
   if (sources.length) content.push(`<details class="detail-section detail-disclosure"><summary><span>Sources</span><span class="detail-disclosure-meta">${sources.length} ${sources.length === 1 ? "source" : "sources"}<i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="contact-list">${sources.map((url, index) => `<a class="source-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">Source ${index + 1}: ${escapeHtml(new URL(url).hostname.replace(/^www\./, ""))}</a>`).join("")}</div></details>`);
   elements.detailContent.innerHTML = content.join("");
-  elements.detailWebsite.hidden = !webLink(organization.url);
-  if (webLink(organization.url)) elements.detailWebsite.href = organization.url;
-  elements.detailMap.hidden = !organization.location;
+  const website = webLink(branch?.url) || webLink(organization.url);
+  elements.detailWebsite.hidden = !website;
+  if (website) elements.detailWebsite.href = website;
+  elements.detailMap.hidden = !branch?.location;
   elements.detailSuggest.href = `/add/?organization=${encodeURIComponent(organization.id)}&type=correction`;
   const params = new URLSearchParams(window.location.search);
   params.delete("organization");
+  if(branches.length>1&&branch)params.set('location',branch.id);else params.delete('location');
   const query = params.toString();
   const url = `${organizationUrl(organization)}${query ? `?${query}` : ""}`;
   if (pushHistory && !previous) window.history.pushState({ grainListOverlay: true, returnUrl }, "", url);
@@ -593,16 +625,17 @@ function showDetails(organization, pushHistory = true) {
   document.querySelector('link[rel="canonical"]')?.setAttribute("href", `${window.location.origin}${organizationUrl(organization)}`);
   if (!elements.detail.open) elements.detail.showModal();
   window.lucide?.createIcons();
+  elements.detailContent.querySelectorAll('[data-profile-location]').forEach(button=>button.addEventListener('click',()=>showDetails(organization,false,button.dataset.profileLocation)));
 }
 
-function closeDetails() {
+function closeDetails(navigateBack = true) {
   if (!state.selectedOrganization) return;
   state.selectedOrganization = null;
   state.focusedOrganizationId = "";
   elements.detail.close();
   document.title = "Grain List";
   document.querySelector('link[rel="canonical"]')?.setAttribute("href", `${window.location.origin}/`);
-  if (window.history.state?.grainListOverlay) window.history.back();
+  if (navigateBack !== false && window.history.state?.grainListOverlay) window.history.back();
   else updateUrl();
 }
 
@@ -697,22 +730,23 @@ function render() {
 function focusLinkedOrganization() {
   if (!state.focusedOrganizationId) return;
   const organization = state.organizations.find(item => item.id === state.focusedOrganizationId || item.slug === state.focusedOrganizationId);
-  if (!organization?.location) {
+  const branch = organization && (organizationLocations(organization).find(l=>l.id===state.selectedLocationId) || organizationLocations(organization)[0]);
+  if (!branch?.location) {
     state.focusedOrganizationId = "";
     render();
     showToast("That listing is no longer available on the map.");
     return;
   }
-  const precision = organization.location.precision;
+  const precision = branch.location.precision;
   const zoom = precision === "state" ? 5 : precision === "place" ? 11 : 13;
-  map.setView([organization.location.lat, organization.location.lng], zoom);
-  const marker = markersById.get(organization.id);
-  if (marker) markerLayer.zoomToShowLayer(marker, () => marker.openTooltip());
-  showDetails(organization, false);
+  map.setView([branch.location.lat, branch.location.lng], zoom, {animate:false});
+  const marker = markerFor(organization,branch);
+  if (marker && map.hasLayer?.(marker)) marker.openTooltip();
+  showDetails(organization, false, branch.id);
 }
 
 function fitResults() {
-  const locations = lastFiltered.filter((item) => item.location);
+  const locations = lastFiltered.flatMap(item => matchingLocations(item)).filter(item=>item.location);
   if (!locations.length) return;
   const bounds = L.latLngBounds(locations.map((item) => [item.location.lat, item.location.lng]));
   frameBounds(bounds, 12);
@@ -944,24 +978,29 @@ function bindEvents() {
   elements.fitResults.addEventListener("click", fitResults);
   elements.closeDetail.addEventListener("click", closeDetails);
   elements.detail.addEventListener("cancel", event => { event.preventDefault(); closeDetails(); });
-  elements.detail.addEventListener("close", closeDetails);
+  elements.detail.addEventListener("close", () => { if (!elements.detail.open) closeDetails(); });
   elements.detail.addEventListener("click", event => { if (event.target === elements.detail) closeDetails(); });
   elements.detailMap.addEventListener("click", () => {
     const organization = state.selectedOrganization;
-    closeDetails();
-    if (!organization?.location) return;
+    const branch = organization && selectedLocation(organization);
+    closeDetails(false);
+    if (!branch?.location) return;
+    if (!matchingLocations(organization).some(l=>l.id===branch.id)) { state.stateCode='';state.radius='';if(searchIntent().place)state.query=''; }
+    if(!matchesSelection(organization.functions,state.functions))state.functions.clear();
+    if(!matchesSelection(organization.grains,state.grains))state.grains.clear();
+    refreshCheckboxes();render();
     mobileSheet?.collapse();
     map.invalidateSize();
-    const zoom = organization.location.precision === "state" ? 5 : organization.location.precision === "place" ? 11 : 13;
-    map.setView([organization.location.lat, organization.location.lng], zoom);
+    const zoom = branch.location.precision === "state" ? 5 : branch.location.precision === "place" ? 11 : 13;
+    map.setView([branch.location.lat, branch.location.lng], zoom);
     const bottomInset = mobileSheet?.inset() || 0;
     if (bottomInset) map.panBy([0, bottomInset / 2], { animate: false });
-    markersById.get(organization.id)?.openTooltip();
+    markerFor(organization,branch)?.openTooltip();
   });
   elements.detailShare.addEventListener("click", async () => {
     const organization = state.selectedOrganization;
     if (!organization) return;
-    const url = `${window.location.origin}${organizationUrl(organization)}`;
+    const url = `${window.location.origin}${organizationUrl(organization)}${organizationLocations(organization).length>1?`?location=${encodeURIComponent(state.selectedLocationId)}`:''}`;
     try {
       if (navigator.share) await navigator.share({ title: organization.name, url });
       else { await navigator.clipboard.writeText(url); showToast("Listing link copied."); }
@@ -1018,6 +1057,7 @@ async function start() {
         organization.state,
         organization.city,
         organization.address,
+        ...organizationLocations(organization).flatMap(l=>[l.name,l.city,l.state,l.address]),
         ...organization.functions,
         ...organization.grains,
       ].join(" ")),
@@ -1035,10 +1075,10 @@ async function start() {
     initializeControls();
     initializeSearch();
     render();
-    if (state.initialView) restoreMapView(state.initialView);
+    if (state.focusedOrganizationId) focusLinkedOrganization();
+    else if (state.initialView) restoreMapView(state.initialView);
     else if (searchIntent().place) fitPlace(searchIntent().place);
     else fitResults();
-    focusLinkedOrganization();
     window.lucide?.createIcons();
   } catch (error) {
     console.error(error);

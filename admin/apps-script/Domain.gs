@@ -52,27 +52,52 @@ var GrainAdminDomain = (function () {
       if(!allowIncomplete && precision==='address' && !o.address)throw new Error('An address-level map point needs an address. Otherwise choose city or region precision.');
     }
     o.locationChecked=input.locationChecked===true;
-    if(JSON.stringify(o).length>20000)throw new Error('The record is too large. Use concise grain names and source URLs.');
+    if(input.researchEvidence) {
+      if(!Array.isArray(input.researchEvidence)||input.researchEvidence.length>80)throw new Error('Too much research evidence.');
+      o.researchEvidence=input.researchEvidence.map(function(f){if(!f||!web(f.source))throw new Error('Research evidence needs a valid source.');return {field:text(f.field,80),value:text(f.value,1500),source:text(f.source,2000),evidence:text(f.evidence,1500)};});
+    }
+    if(Object.prototype.hasOwnProperty.call(input,'locations')) {
+      if(!Array.isArray(input.locations)||!input.locations.length||input.locations.length>40)throw new Error('Include between one and 40 locations. Close locations instead of deleting them.');
+      var ids={};
+      o.locations=input.locations.map(function(raw){
+        if(!raw||!/^loc-[a-f0-9]{16}(?:[a-f0-9]{16})?$/.test(raw.id)||ids[raw.id])throw new Error('Location IDs must be stable and unique.');
+        ids[raw.id]=true;
+        if(Object.prototype.hasOwnProperty.call(raw,'locations'))throw new Error('Locations cannot contain nested locations.');
+        var branch=normalize(Object.assign({},raw,{name:raw.name||'Main location',category:'',functions:raw.functions&&raw.functions.length?raw.functions:o.functions}),allowed,true);
+        branch.functions=list(raw.functions).sort();branch.grains=grains(raw.grains).sort();
+        branch.id=raw.id;branch.type=text(raw.type||'Other',80);delete branch.category;
+        if(['Bakery','Restaurant','Retail store','Mill','Farm','Production','Office','Other'].indexOf(branch.type)<0)throw new Error('Choose a supported location type.');
+        if(!allowIncomplete&&o.operationalStatus==='Active'&&branch.operationalStatus==='Active'&&(!branch.state||!branch.sources.length||!branch.location||!branch.locationChecked))throw new Error('Every active location needs a state, supporting source, and confirmed map point.');
+        return branch;
+      }).sort(function(a,b){return a.name.localeCompare(b.name)||a.id.localeCompare(b.id);});
+      if(!allowIncomplete&&o.operationalStatus==='Active'&&!o.locations.some(function(l){return l.operationalStatus==='Active';}))throw new Error('An active organization needs an active location.');
+    }
+    if(JSON.stringify(o).length>50000)throw new Error('The record is too large. Use concise grain names and source URLs.');
     return o;
   }
   function revision(o, hash) {
     var values={}; Object.keys(fields).forEach(function(k){values[k]=o[k] || (['functions','grains','sources'].indexOf(k)>=0?[]:'');});
     values.location=o.location || null;
+    if(o.locations)values.locations=o.locations.map(function(l){var v={};['id','name','type','address','city','state','phone','email','url','functions','grains','sources','operationalStatus','location'].forEach(function(k){v[k]=l[k]===undefined?(['functions','grains','sources'].indexOf(k)>=0?[]:k==='location'?null:''):l[k];});return v;}).sort(function(a,b){return a.id.localeCompare(b.id);});
     return hash(JSON.stringify(values));
   }
   function changed(before, after) {
-    return Object.keys(fields).concat(['location']).filter(function(k){return JSON.stringify(before && before[k])!==JSON.stringify(after[k]);});
+    return Object.keys(fields).concat(['location','locations']).filter(function(k){return JSON.stringify(before && before[k])!==JSON.stringify(after[k]);});
   }
   function cleared(before, after) {
-    return before ? Object.keys(fields).filter(function(k){var b=before[k],a=after[k];return (Array.isArray(b)?b.length:!!b) && !(Array.isArray(a)?a.length:!!a);}) : [];
+    var removed=before ? Object.keys(fields).filter(function(k){var b=before[k],a=after[k];return (Array.isArray(b)?b.length:!!b) && !(Array.isArray(a)?a.length:!!a);}) : [];
+    if(before&&before.locations&&before.locations.some(function(l){return l.operationalStatus!=='Closed'&&(!after.locations||!after.locations.some(function(n){return n.id===l.id&&n.operationalStatus!=='Closed';}));}))removed.push('locations');
+    return removed;
   }
   function assertPublish(o, records, id) {
-    if(o.operationalStatus==='Active' && (!o.location || !o.locationChecked))throw new Error('Confirm the map location before publishing.');
+    if(o.operationalStatus==='Active' && !o.locations && (!o.location || !o.locationChecked))throw new Error('Confirm the map location before publishing.');
     if(records.some(function(r){return r.recordId!==id && r.operationalStatus!=='Closed' && identity(r)===identity(o);}))throw new Error('Another organization with this name and state already exists.');
   }
   function toPublic(o, id, status) {
     if(status && (typeof status!=='string' || status.length>80))throw new Error('Invalid publication status.');
-    return {id:id,name:o.name,category:o.category,state:o.state,city:o.city,functions:o.functions,grains:o.grains,address:o.address,phone:o.phone,email:o.email,url:o.url,status:status||'Partial',sources:o.sources,location:o.location};
+    var result={id:id,name:o.name,category:o.category,state:o.state,city:o.city,functions:o.functions,grains:o.grains,address:o.address,phone:o.phone,email:o.email,url:o.url,status:status||'Partial',sources:o.sources,location:o.location};
+    if(o.locations)result.locations=o.locations.map(function(l){var v=Object.assign({},l);delete v.locationChecked;return v;});
+    return result;
   }
   return {states:states,extraHeaders:extraHeaders,fields:fields,text:text,key:key,list:list,category:category,grains:grains,taxonomy:taxonomy,web:web,identity:identity,mapKey:mapKey,publicId:publicId,normalize:normalize,revision:revision,changed:changed,cleared:cleared,assertPublish:assertPublish,toPublic:toPublic};
 })();

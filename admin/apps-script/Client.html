@@ -6,12 +6,13 @@
   const icon=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
   const icons=()=>{if(window.lucide)window.lucide.createIcons();};
   const list=v=>[...new Set(String(v||'').split(/[,;\n]/).map(s=>s.trim()).filter(Boolean))];
-  const plain=v=>Array.isArray(v)?v.join('; '):v&&typeof v==='object'?`${v.lat}, ${v.lng} (${v.precision})`:String(v||'Not recorded');
+  const plain=v=>Array.isArray(v)?v.map(x=>x&&typeof x==='object'?`${x.name}: ${x.address||[x.city,x.state].filter(Boolean).join(', ')} (${x.operationalStatus})${x.location?' · '+x.location.lat+', '+x.location.lng:''}`:x).join('; '):v&&typeof v==='object'?`${v.lat}, ${v.lng} (${v.precision})`:String(v||'Not recorded');
   const http=v=>{try{return ['https:','http:'].includes(new URL(v).protocol);}catch{return false;}};
-  const labels={name:'Name',category:'Category',state:'State',city:'City / region',functions:'Functions',grains:'Grains',address:'Address',phone:'Phone',email:'Email',url:'Website',sources:'Sources',location:'Map location',operationalStatus:'Operating status'};
+  const labels={name:'Name',category:'Category',state:'State',city:'City / region',functions:'Functions',grains:'Grains',address:'Address',phone:'Phone',email:'Email',url:'Website',sources:'Sources',location:'Map location',locations:'Locations',operationalStatus:'Operating status'};
   let state, page=0, editing=null, dirty=false, currentView='listings', map, marker, editorSession=0, viewRevision=0;
   const operations=new Set(), saves=new Map();
   let matches=[], polling=null, pollCount=0;
+  let branches=[], branchId='', primaryBranchId='', researchFindings=[], researchSession=0, researchEvidence=[];
   function rpc(name,...args) {
     return new Promise((resolve,reject)=>{
       if(!window.google?.script?.run)return reject(new Error('Open the deployed private Google admin to connect to the Sheet.'));
@@ -50,6 +51,7 @@
     $('.ga-nav').hidden=false;$('#ga-account').textContent=`Signed in as ${state.email}`;$('#ga-sheet-link').href=state.sheetUrl;
     $('#ga-state').innerHTML='<option value="">All states</option>'+state.states.map(s=>`<option>${escape(s)}</option>`).join('');
     field('state').innerHTML='<option value="">Choose state</option>'+state.states.map(s=>`<option>${escape(s)}</option>`).join('');
+    field('branchState').innerHTML=field('state').innerHTML;
     $('#ga-categories').innerHTML=[...new Set(state.records.map(o=>o.category).filter(Boolean))].sort().map(v=>`<option value="${escape(v)}"></option>`).join('');
     $('#ga-function-options').innerHTML=state.functions.map(v=>`<label class="ga-option"><input type="checkbox" name="functions" value="${escape(v)}"><span>${escape(v)}</span></label>`).join('');
     $('#ga-draft-count').textContent=state.drafts.filter(d=>d.state!=='Published').length;$('#ga-footer-count').textContent=`${state.records.length} source records`;
@@ -58,7 +60,7 @@
   function renderList() {
     const q=$('#ga-search').value.toLowerCase(), region=$('#ga-state').value, status=$('#ga-status').value, published=new Set(state.published.map(o=>o.id));
     const matchesStatus=o=>!status||(status==='on-site'&&published.has(o.publicId))||(status==='off-site'&&!published.has(o.publicId))||(status==='closed'&&o.operationalStatus==='Closed');
-    const rows=state.records.filter(o=>matchesStatus(o)&&(!region||o.state===region)&&[o.name,o.city,o.state,o.address,...o.functions,...o.grains].join(' ').toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
+    const rows=state.records.filter(o=>matchesStatus(o)&&(!region||o.state===region||o.locations?.some(l=>l.operationalStatus!=='Closed'&&l.state===region))&&[o.name,o.city,o.state,o.address,...o.functions,...o.grains,...(o.locations||[]).flatMap(l=>[l.name,l.city,l.state,l.address])].join(' ').toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
     page=Math.min(page,Math.max(0,Math.ceil(rows.length/8)-1));const visible=rows.slice(page*8,page*8+8);
     $('#ga-total').textContent=q||region||status?`${rows.length} of ${state.records.length} records match`:`${state.records.length} record${state.records.length===1?'':'s'} in the master Google Sheet`;
     $('#ga-unlinked').hidden=!state.unlinked?.length;$('#ga-unlinked').textContent=state.unlinked?.length?`${state.unlinked.length} live listing(s) have no linked source row: ${state.unlinked.map(o=>o.name).join(', ')}. No automatic removal has been made.`:'';
@@ -77,8 +79,28 @@
     field('operationalStatus').value=o.operationalStatus||'Active';field('grains').value=o.grains.join('\n');field('sources').value=o.sources.join('\n');
     all('input[name="functions"]').forEach(c=>c.checked=o.functions.includes(c.value));updateFunctionLabel();$('#ga-function-menu').open=false;
     field('lat').value=o.location?.lat??'';field('lng').value=o.location?.lng??'';field('precision').value=o.location?.precision||'place';field('locationChecked').checked=o.locationChecked===true;
+    const legacyId=editing.publicId?'loc-'+editing.publicId.replace(/^grain-/,''):'loc-'+crypto.randomUUID().replaceAll('-','');
+    branches=JSON.parse(JSON.stringify(o.locations||[{id:legacyId,name:o.city||'Main location',type:'Other',address:o.address||'',city:o.city||'',state:o.state||'',phone:o.phone||'',email:o.email||'',url:'',sources:o.sources||[],functions:[],grains:[],operationalStatus:o.operationalStatus||'Active',location:o.location||null,locationChecked:o.locationChecked===true}]));
+    researchEvidence=JSON.parse(JSON.stringify(o.researchEvidence||[]));
+    primaryBranchId=branches.find(l=>l.id===legacyId)?.id||branches.find(l=>l.address===o.address&&l.state===o.state)?.id||branches[0].id;
+    branchId=primaryBranchId;showBranch(branchId,false);
     $('#ga-editor-title').textContent=source?'Edit organization':'Add organization';$('#ga-editor-subtitle').textContent=source?.name||'New listing';$('#ga-location-matches').innerHTML='';
-    dirty=false;message('');go('editor',true);initializeMap(o.location);updateMapStatus();updateSaveControls();
+    dirty=false;message('');go('editor',true);initializeMap(branches.find(l=>l.id===branchId)?.location);updateMapStatus();updateSaveControls();
+  }
+  function captureBranch() {
+    const l=branches.find(l=>l.id===branchId);if(!l)return;
+    Object.assign(l,{name:field('branchName').value.trim(),type:field('branchType').value||'Other',operationalStatus:field('branchStatus').value||'Active',state:field('branchState').value,address:field('address').value.trim(),city:field('city').value.trim(),phone:field('phone').value.trim(),email:field('email').value.trim(),url:field('branchUrl').value.trim(),sources:field('branchSources').value.split(/[;\n]/).map(s=>s.trim()).filter(Boolean),location:field('lat').value!==''&&field('lng').value!==''?{lat:Number(field('lat').value),lng:Number(field('lng').value),precision:field('precision').value}:null,locationChecked:field('locationChecked').checked});
+    if(l.id===primaryBranchId&&branches.length===1&&!l.sources.length)l.sources=field('sources').value.split(/[;\n]/).map(s=>s.trim()).filter(Boolean);
+  }
+  function renderBranches() {
+    $('#ga-branch-list').innerHTML=[...branches].sort((a,b)=>a.name.localeCompare(b.name)).map(l=>`<button type="button" class="ga-branch${l.id===branchId?' is-selected':''}" data-branch="${escape(l.id)}" aria-pressed="${l.id===branchId}"><span>${escape(l.name||'New location')}<small>${escape([l.city,l.state,l.operationalStatus==='Closed'?'Closed':''].filter(Boolean).join(' · '))}</small></span>${l.id===branchId?icon('check'):''}</button>`).join('');icons();
+  }
+  function showBranch(id,capture=true) {
+    if(capture)captureBranch();const l=branches.find(l=>l.id===id);if(!l)return;branchId=id;
+    for(const n of ['address','city','phone','email'])field(n).value=l[n]||'';
+    field('branchName').value=l.name;field('branchType').value=l.type||'Other';field('branchStatus').value=l.operationalStatus||'Active';field('branchState').value=l.state||field('state').value;field('branchUrl').value=l.url||'';field('branchSources').value=(l.sources||[]).join('\n');
+    field('lat').value=l.location?.lat??'';field('lng').value=l.location?.lng??'';field('precision').value=l.location?.precision||'place';field('locationChecked').checked=l.locationChecked===true;
+    $('#ga-location-matches').innerHTML='';renderBranches();if(currentView==='editor')initializeMap(l.location);updateMapStatus();
   }
   function updateFunctionLabel() {const values=all('input[name="functions"]:checked').map(c=>c.value);$('#ga-function-summary').textContent=values.length?values.join(' · '):'Choose functions';}
   function initializeMap(location) {
@@ -97,7 +119,7 @@
     if(changed){field('locationChecked').checked=false;dirty=true;}updateMapStatus();
   }
   function updateMapStatus() {$('#ga-map-status').textContent=field('lat').value&&field('lng').value?`${Number(field('lat').value).toFixed(5)}, ${Number(field('lng').value).toFixed(5)}${field('locationChecked').checked?' · Confirmed':' · Needs confirmation'}`:'Place a pin or look up the address, then confirm the location.';}
-  function readForm() {const o=Object.fromEntries(['name','category','state','url','address','city','phone','email','operationalStatus'].map(n=>[n,field(n).value.trim()]));return {...o,functions:all('input[name="functions"]:checked').map(c=>c.value),grains:list(field('grains').value),sources:field('sources').value.split(/[;\n]/).map(s=>s.trim()).filter(Boolean),location:field('lat').value!==''&&field('lng').value!==''?{lat:Number(field('lat').value),lng:Number(field('lng').value),precision:field('precision').value}:null,locationChecked:field('locationChecked').checked};}
+  function readForm() {captureBranch();const o=Object.fromEntries(['name','category','state','url','address','city','phone','email','operationalStatus'].map(n=>[n,field(n).value.trim()]));const primary=branches.find(l=>l.id===primaryBranchId&&l.operationalStatus!=='Closed')||branches.find(l=>l.operationalStatus!=='Closed')||branches[0];return {...o,...(primary?Object.fromEntries(['address','city','state','phone','email'].map(k=>[k,k==='state'?(primary[k]||o.state):primary[k]])):{}),functions:all('input[name="functions"]:checked').map(c=>c.value),grains:list(field('grains').value),sources:field('sources').value.split(/[;\n]/).map(s=>s.trim()).filter(Boolean),location:primary?primary.location:field('lat').value!==''&&field('lng').value!==''?{lat:Number(field('lat').value),lng:Number(field('lng').value),precision:field('precision').value}:null,locationChecked:primary?primary.locationChecked:field('locationChecked').checked,...(branches.length?{locations:JSON.parse(JSON.stringify(branches))}:{}),...(researchEvidence.length?{researchEvidence:JSON.parse(JSON.stringify(researchEvidence))}:{})};}
   async function save(forReview=false,retry=null) {
     if(!retry&&!field('name').value.trim())throw new Error('Give the draft an organization name.');if(!retry&&forReview&&!form.reportValidity())return null;
     const payload=retry?.payload||JSON.parse(JSON.stringify({...editing,data:readForm()}));
@@ -119,8 +141,9 @@
     editing={...editing,...draft};const o=draft.data, before=state.records.find(r=>r.recordId===draft.recordId), rawLive=Object.hasOwn(draft,'publishedBefore')?draft.publishedBefore:state.published.find(r=>r.id===draft.publicId);
     const live=rawLive?{...rawLive,operationalStatus:'Active'}:null;
     const clears=live&&Object.keys(labels).some(k=>{const b=live[k],a=o[k];return (Array.isArray(b)?b.length:!!b)&&!(Array.isArray(a)?a.length:!!a);});
-    const confirm=clears||o.operationalStatus==='Closed';
-    const incomplete=!o.state||!o.sources.length||(o.operationalStatus!=='Closed'&&(!o.functions.length||!o.location||!o.locationChecked));
+    const removedBranch=live?.locations?.some(l=>l.operationalStatus!=='Closed'&&!o.locations?.some(n=>n.id===l.id&&n.operationalStatus!=='Closed'));
+    const confirm=clears||removedBranch||o.operationalStatus==='Closed';
+    const incomplete=!o.state||!o.sources.length||(o.operationalStatus!=='Closed'&&(!o.functions.length||(!o.locations&&(!o.location||!o.locationChecked))||(o.locations&&(!o.locations.some(l=>l.operationalStatus!=='Closed')||o.locations.some(l=>l.operationalStatus!=='Closed'&&(!l.state||!l.sources.length||!l.location||!l.locationChecked))))));
     $('#ga-review').innerHTML=`<button type="button" class="ga-link ga-back" data-draft="${escape(draft.draftId)}">${icon('arrow-left')}Back to editing</button><div class="ga-heading"><div><h1>Review changes</h1><p>${escape(o.name)}</p></div><span class="ga-sub">Draft saved in Google Sheet</span></div><div class="ga-review-layout"><section><h2>Changes to the master Sheet</h2>${differences(before,o)}<details class="ga-section"><summary>Changes visitors will see</summary>${differences(live,o)}</details>${confirm?'<label class="ga-location ga-warning"><input id="ga-confirm-removal" type="checkbox"><span>I reviewed the fields being cleared or the removal of this closed organization from the site.</span></label>':''}<button id="ga-publish" type="button" class="ga-button ga-primary" ${confirm?'disabled':''}>${icon('upload')}Save to Sheet & publish</button><p class="ga-note">The master Sheet saves first. The site updates only after validation and deployment succeed.</p></section><aside class="ga-public"><p class="ga-eyebrow">${escape(o.category||'Organization')} · ${escape(o.state)}</p><h2>${escape(o.name)}</h2><h3>Functions</h3><ul class="ga-tags">${o.functions.map(v=>`<li>${escape(v)}</li>`).join('')}</ul><h3>Grains</h3><ul class="ga-tags ga-grains">${o.grains.map(v=>`<li>${escape(v)}</li>`).join('')}</ul><h3>Contact</h3><p>${escape(o.address)}</p><p>${escape(o.phone)}</p><p>${escape(o.email)}</p>${http(o.url)?`<a href="${escape(o.url)}" target="_blank" rel="noopener noreferrer">Visit website</a>`:''}<h3>Sources</h3><p>${o.sources.length} source${o.sources.length===1?'':'s'}</p></aside></div>`;
     dirty=false;message(incomplete?'Complete the state, functions, supporting sources, and confirmed map location before publishing.':'');go('review',true);
     $('#ga-publish').dataset.invalid=String(incomplete||!!confirm);updateSaveControls();
@@ -143,13 +166,58 @@
   all('[data-view]').forEach(b=>b.addEventListener('click',()=>{message('');go(b.dataset.view);}));
   $('#ga-initialize').addEventListener('click',()=>action(async()=>{await rpc('initializeAdmin');await load();message('The admin is connected to the master Google Sheet.');},'Initializing record identities and private tabs...'));
   $('#ga-add').addEventListener('click',()=>edit('',''));$('#ga-editor-back').addEventListener('click',()=>go('listings'));$('#ga-cancel').addEventListener('click',()=>go('listings'));
+  $('#ga-add-location').addEventListener('click',()=>{captureBranch();const l={id:'loc-'+crypto.randomUUID().replaceAll('-',''),name:'New location',type:'Other',state:field('state').value,address:'',city:'',phone:'',email:'',url:'',sources:[],functions:[],grains:[],operationalStatus:'Active',location:null,locationChecked:false};branches.push(l);showBranch(l.id,false);dirty=true;});
   $('#ga-search').addEventListener('input',()=>{page=0;renderList();});$('#ga-state').addEventListener('change',()=>{page=0;renderList();});$('#ga-status').addEventListener('change',()=>{page=0;renderList();});$('#ga-previous').addEventListener('click',()=>{page--;renderList();});$('#ga-next').addEventListener('click',()=>{page++;renderList();});
-  form.addEventListener('input',()=>dirty=true);form.addEventListener('change',e=>{dirty=true;if(e.target.name==='functions')updateFunctionLabel();if(['address','city','state','name','precision','lat','lng'].includes(e.target.name)){field('locationChecked').checked=false;if(['lat','lng'].includes(e.target.name)&&field('lat').value&&field('lng').value)setPoint(Number(field('lat').value),Number(field('lng').value),true);}updateMapStatus();});form.addEventListener('submit',e=>e.preventDefault());
+  form.addEventListener('input',()=>dirty=true);form.addEventListener('change',e=>{dirty=true;if(e.target.name==='functions')updateFunctionLabel();if(e.target.name==='state'&&branchId===primaryBranchId){field('branchState').value=field('state').value;field('locationChecked').checked=false;}if(['address','city','branchState','branchName','precision','lat','lng'].includes(e.target.name)){field('locationChecked').checked=false;if(['lat','lng'].includes(e.target.name)&&field('lat').value&&field('lng').value)setPoint(Number(field('lat').value),Number(field('lng').value),true);}captureBranch();renderBranches();updateMapStatus();});form.addEventListener('submit',e=>e.preventDefault());
   $('#ga-save').addEventListener('click',()=>action(()=>save(),null,'save:'+editing.draftId));
   $('#ga-review-button').addEventListener('click',()=>action(()=>save(true),null,'save:'+editing.draftId));
-  $('#ga-find-location').addEventListener('click',()=>{const session=editorSession,input={address:field('address').value,state:field('state').value};action(async()=>{updateSaveControls();const found=await rpc('lookupAdminAddress',input);if(session!==editorSession||input.address!==field('address').value||input.state!==field('state').value)return;matches=found;$('#ga-location-matches').innerHTML=matches.length?matches.map((m,i)=>`<button type="button" class="ga-button" data-location="${i}">${escape(m.address)}</button>`).join(''):'<p class="ga-note">No address match. Place the pin manually and choose its precision.</p>';message('');},'Looking up the address with the US Census geocoder...','location:'+session);});
+  $('#ga-find-location').addEventListener('click',()=>{const session=editorSession,selected=branchId,input={address:field('address').value,state:field('branchState').value};action(async()=>{updateSaveControls();const found=await rpc('lookupAdminAddress',input);if(session!==editorSession||selected!==branchId||input.address!==field('address').value||input.state!==field('branchState').value)return;matches=found;$('#ga-location-matches').innerHTML=matches.length?matches.map((m,i)=>`<button type="button" class="ga-button" data-location="${i}">${escape(m.address)}</button>`).join(''):'<p class="ga-note">No address match. Place the pin manually and choose its precision.</p>';message('');},'Looking up the address with the US Census geocoder...','location:'+session);});
+  $('#ga-research').addEventListener('click',()=>{researchSession=editorSession;researchFindings=[];$('#ga-research-url').value=field('url').value;$('#ga-research-pages').value='';$('#ga-research-text').value='';$('#ga-research-results').innerHTML='';$('#ga-research-apply').hidden=true;$('#ga-research-status').textContent='';$('#ga-research-dialog').showModal();});
+  $('#ga-research-close').addEventListener('click',()=>$('#ga-research-dialog').close());
+  function rememberResearchSelection() {
+    if(researchSession!==editorSession)return;
+    for(const c of all('[data-finding]:checked')){const f=researchFindings[Number(c.dataset.finding)];if(!f)continue;const item={field:f.field,value:typeof f.value==='object'?JSON.stringify(f.value):String(f.value),source:f.source,evidence:f.evidence};if(!researchEvidence.some(e=>JSON.stringify(e)===JSON.stringify(item)))researchEvidence.push(item);}
+    researchEvidence=researchEvidence.slice(-80);
+  }
+  $('#ga-research-apply').addEventListener('click',rememberResearchSelection);
+  $('#ga-research-run').addEventListener('click',()=>action(async()=>{
+    const session=editorSession;captureBranch();$('#ga-research-run').disabled=true;$('#ga-research-status').textContent='Reading website pages...';
+    try{
+      const result=await rpc('researchAdminOrganization',{name:field('name').value,url:$('#ga-research-url').value,pages:$('#ga-research-pages').value.split('\n').map(s=>s.trim()).filter(Boolean),text:$('#ga-research-text').value});
+      if(session!==editorSession||session!==researchSession)return;
+      const currentGrains=list(field('grains').value).map(g=>g.toLowerCase()),currentFunctions=all('input[name="functions"]:checked').map(c=>c.value),primary=branches.find(l=>l.id===primaryBranchId);
+      researchFindings=result.findings.filter(f=>{
+        if(f.field==='locations')return !branches.some(l=>researchAddressKey(l.address)===researchAddressKey(f.value.address));
+        if(f.field==='functions')return !currentFunctions.includes(f.value);
+        if(f.field==='grains')return !currentGrains.some(g=>g===f.value.toLowerCase()||(['wheat','rye','corn','barley','rice','oats','spelt','millet','sorghum','amaranth','buckwheat','quinoa','teff'].includes(f.value.toLowerCase())&&g.endsWith(' '+f.value.toLowerCase())));
+        return !primary?.[f.field];
+      });
+      $('#ga-research-status').textContent=result.attempts.map(a=>`${a.url}: ${a.error||a.status}`).join('\n');
+      $('#ga-research-results').innerHTML=researchFindings.length?researchFindings.map((f,i)=>`<label class="ga-research-finding"><input type="checkbox" data-finding="${i}"><span><strong>${escape(f.field==='locations'?'Possible location: '+f.value.name:f.field+': '+f.value)}</strong><blockquote>${escape(f.evidence)}</blockquote><a href="${escape(f.source)}" target="_blank" rel="noopener noreferrer">View source</a></span></label>`).join(''):'<p>No additional supported details found. Add a contact or locations page, or copy its text above.</p>';
+      $('#ga-research-apply').hidden=!researchFindings.length;
+    }finally{$('#ga-research-run').disabled=false;}
+  },null,'research:'+editorSession));
+  function researchAddressKey(value) {
+    const aliases={st:'street',ave:'avenue',rd:'road',blvd:'boulevard',ln:'lane',dr:'drive',hwy:'highway'};
+    return String(value||'').toLowerCase().replace(/\b\d{5}(?:-\d{4})?\b/g,'').replace(/\b(st|ave|rd|blvd|ln|dr|hwy)\b/g,s=>aliases[s]).replace(/[^a-z0-9]+/g,' ').trim();
+  }
+  $('#ga-research-apply').addEventListener('click',()=>{
+    if(researchSession!==editorSession)return;captureBranch();
+    for(const c of all('[data-finding]:checked')){
+      const f=researchFindings[Number(c.dataset.finding)];if(!f)continue;
+      const source=field('sources').value.split('\n');if(!source.includes(f.source))field('sources').value=[...source.filter(Boolean),f.source].join('\n');
+      if(f.field==='locations'){
+        const existing=branches.find(l=>researchAddressKey(l.address)===researchAddressKey(f.value.address));
+        if(!existing)branches.push({...f.value,id:'loc-'+crypto.randomUUID().replaceAll('-',''),sources:[f.source],functions:[],grains:[],operationalStatus:'Active',location:f.value.location||null,locationChecked:false});
+      }else if(f.field==='grains')field('grains').value=[...new Set([...list(field('grains').value),f.value])].sort().join('\n');
+      else if(f.field==='functions'){const option=all('input[name="functions"]').find(n=>n.value===f.value);if(option)option.checked=true;}
+      else if(['phone','email'].includes(f.field)){const l=branches.find(l=>l.id===primaryBranchId);if(l&&!l[f.field]){l[f.field]=f.value;if(!l.sources.includes(f.source))l.sources.push(f.source);}}
+    }
+    showBranch(branchId,false);updateFunctionLabel();dirty=true;$('#ga-research-dialog').close();message('Selected suggestions added to the draft. Confirm new map locations before publishing.');
+  });
   root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;
     if(b.dataset.edit)edit(b.dataset.edit,'');if(b.dataset.draft)edit('',b.dataset.draft);if(b.dataset.review){if(!dirty||safelySaving()||window.confirm('Discard unsaved form changes?')){editorSession++;review(state.drafts.find(d=>d.draftId===b.dataset.review));}}
+    if(b.dataset.branch)showBranch(b.dataset.branch);
     if(b.dataset.retry){const job=saves.get(b.dataset.retry);if(job)action(()=>save(false,job),null,'save:'+job.payload.draftId);}
     if(b.dataset.location!==undefined){const m=matches[Number(b.dataset.location)];if(m){setPoint(m.location.lat,m.location.lng,true);field('precision').value='address';map?.setView([m.location.lat,m.location.lng],15);}}
     if(b.dataset.check)action(()=>check(b.dataset.check),null,'check:'+b.dataset.check);

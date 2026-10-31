@@ -23,7 +23,7 @@ function fixture(options={}) {
   const draftHeaders=['Draft ID','Version','Record ID','Public ID','Base Revision','Data','Updated At','State','Live Revision'];
   const activityHeaders=['Request ID','Record ID','Public ID','Name','Saved At','Status','Payload','Workflow URL','Previous Record'];
   addSheet('Admin Drafts',[draftHeaders]);addSheet('Admin Activity',[activityHeaders]);
-  const env={live:[clone(domain.toPublic(data,publicId,'Partial'))],runs:[],dispatches:[],metadata:[],writes:[],failDispatch:false,lockBusy:false,digests:0,reads:[]};
+  const env={live:[clone(domain.toPublic(data,publicId,'Partial'))],runs:[],dispatches:[],metadata:[],writes:[],failDispatch:false,lockBusy:false,digests:0,reads:[],researchPages:{}};
   const book={getSheetByName:name=>tables.get(name),insertSheet:name=>addSheet(name,[[]])};
   function reply(value,code=200){return {getResponseCode:()=>code,getContentText:()=>JSON.stringify(value)};}
   const context={console,Set,Map,JSON,Date,Math,Number,String,Object,Array,isFinite,
@@ -38,6 +38,8 @@ function fixture(options={}) {
       if(url.startsWith('https://grain-list.vercel.app/'))return reply({organizations:env.live});
       if(url.includes('api.github.com')){if(url.includes('/dispatches')){if(env.failDispatch)return reply({},403);env.dispatches.push(body);return reply({},204);}return reply({workflow_runs:env.runs});}
       if(url.includes('geocoding.geo.census.gov'))return reply({result:{addressMatches:[]}});
+      if(url.startsWith('https://dns.google/resolve?'))return reply({Answer:[{type:1,data:'93.184.216.34'}]});
+      if(Object.hasOwn(env.researchPages,url))return {getResponseCode:()=>200,getContentText:()=>env.researchPages[url],getAllHeaders:()=>({'Content-Type':'text/html'})};
       if(!url.includes('sheets.googleapis.com'))throw new Error('Unexpected test network request');
       if(url.includes('/values/') && (!opts.method || opts.method==='get')){const name=decodeURIComponent(url.split('/values/')[1].split('?')[0]).match(/^'(.+)'$/)[1].replace(/''/g,"'");env.reads.push(name);return reply({values:tables.get(name).rows});}
       if(url.endsWith('/developerMetadata:search'))return reply({matchedDeveloperMetadata:env.metadata.filter(m=>m.metadataValue===body.dataFilters[0].developerMetadataLookup.metadataValue).map(m=>({developerMetadata:m}))});
@@ -49,6 +51,7 @@ function fixture(options={}) {
     }}
   };
   vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(root,'admin/apps-script/Domain.gs'),'utf8'),context);vm.runInContext(fs.readFileSync(path.join(root,'admin/apps-script/Code.gs'),'utf8'),context);
+  for(const name of ['Locations.gs','Research.gs'])if(fs.existsSync(path.join(root,'admin/apps-script',name)))vm.runInContext(fs.readFileSync(path.join(root,'admin/apps-script',name),'utf8'),context);
   const state=()=>context.getAdminState();
   const save=(changes={})=>{const r=state().records[0];return context.saveAdminDraft({recordId:r.recordId,baseRevision:r.revision,data:{...data,...changes}});};
   return {context,env,properties,tables,headers,rawId,publicId,state,save};

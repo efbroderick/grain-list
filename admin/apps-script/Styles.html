@@ -1,4 +1,15 @@
 <style>
+.ga-branch-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:20px; }
+.ga-branch { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; border:1px solid #d6ded9; border-radius:6px; background:white; color:inherit; text-align:left; font:inherit; cursor:pointer; }
+.ga-branch small { display:block; color:#69746f; font-size:12px; margin-top:4px; }
+.ga-branch.is-selected { border-color:#3d6ba7; }
+.ga-branch svg { width:18px; height:18px; color:#3d6ba7; }
+.ga-research-dialog { width:min(680px,calc(100% - 24px)); max-height:85dvh; overflow:auto; border:1px solid #d6ded9; border-radius:8px; padding:24px; color:#23332b; font:14px system-ui,sans-serif; }
+.ga-research-dialog::backdrop { background:rgb(0 0 0 / 35%); }
+.ga-research-dialog .ga-field { margin-bottom:16px; }
+.ga-research-finding { display:flex; align-items:flex-start; gap:12px; border-top:1px solid #d6ded9; padding:16px 0; }
+.ga-research-finding input { margin-top:4px; }
+.ga-research-finding blockquote { margin:8px 0; color:#69746f; overflow-wrap:anywhere; }
 #grain-admin-preview { --gl-paper: light-dark(#ffffff,#171c19); --gl-ink: light-dark(#16231c,#eef3ef); --gl-muted: light-dark(#66736b,#a9b7ad); --gl-line: light-dark(#d9e0dc,#3b4840); --gl-soft: light-dark(#f3f6f4,#222b25); --gl-green: light-dark(#173c2a,#9bc7aa); --gl-on-green: light-dark(#ffffff,#132419); --gl-blue: light-dark(#315b9d,#9ebceb); --gl-warn: light-dark(#805b1e,#e8c582); --gl-error: light-dark(#a2342b,#ffaaa2); --gl-tag: light-dark(#ecf3ee,#2a3b2f); --gl-grain: light-dark(#fff5dc,#3d3523); --gl-grain-ink: light-dark(#765214,#eed095); background:var(--gl-paper); color:var(--gl-ink); font:14px/1.5 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; letter-spacing:0; min-width:0; }
 #grain-admin-preview * { box-sizing:border-box; }
 #grain-admin-preview [hidden] { display:none !important; }

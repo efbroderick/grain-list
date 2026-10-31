@@ -376,6 +376,8 @@ def main():
     if summary["removals"] and not args.allow_removals:
         raise SystemExit("Publication blocked: review removals, then use --allow-removals.")
     payload = build_payload(active_rows(rows), cache)
+    if any(o.get("locations") for o in published.get("organizations", [])):
+        raise SystemExit("Publication blocked: linked Locations are now maintained through the admin. A Listings-only CSV cannot replace the directory because it would erase branch records. Use the admin to publish these changes.")
     problems = validate_payload(payload, allowed)
     if problems:
         raise SystemExit("Publication blocked: " + "\n".join(problems))

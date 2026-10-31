@@ -5,7 +5,8 @@ const { organizationPath, assignRoutes, routeRedirects } = require("./organizati
 
 const ROOT = path.resolve(__dirname, "..");
 const DEFAULT_ORIGIN = "https://grain-list.vercel.app";
-const PUBLIC_FIELDS = new Set(["id", "name", "category", "state", "city", "functions", "grains", "address", "phone", "email", "url", "status", "sources", "location"]);
+const PUBLIC_FIELDS = new Set(["id", "name", "category", "state", "city", "functions", "grains", "address", "phone", "email", "url", "status", "sources", "location", "locations"]);
+const LOCATION_FIELDS = new Set(['id','name','type','address','city','state','phone','email','url','functions','grains','sources','operationalStatus','location']);
 const STATES = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ").sort();
 const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const icon = name => `<i data-lucide="${name}" aria-hidden="true"></i>`;
@@ -29,7 +30,7 @@ ${noindex ? '<meta name="robots" content="noindex,follow">' : ""}
 <meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(canonical)}">
 <meta property="og:image" content="${escape(new URL('/assets/app-icon-512.png', origin).href)}">
 <link rel="icon" href="/assets/favicon.png"><link rel="apple-touch-icon" href="/assets/app-icon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20261030-search"><link rel="stylesheet" href="/pages.css?v=20261016">
+<link rel="stylesheet" href="/styles.css?v=20261030-locations"><link rel="stylesheet" href="/pages.css?v=20261016">
 ${structured ? `<script type="application/ld+json">${jsonScript(structured)}</script>` : ""}
 </head><body class="document-page">
 <header class="page-topbar"><a class="brand" href="/" aria-label="Grain List home"><span class="brand-mark"><img src="/assets/brand-mark.png" alt=""></span><strong>Grain List</strong></a>
@@ -41,7 +42,7 @@ ${content}
 </body></html>`;
 }
 function tags(values, grain = false) {
-  return `<ul class="profile-tags${grain ? " profile-grains" : ""}">${values.map(value => `<li>${escape(value)}</li>`).join("")}</ul>`;
+  return `<ul class="profile-tags${grain ? " profile-grains" : ""}">${[...values].sort((a,b)=>a.localeCompare(b)).map(value => `<li>${escape(value)}</li>`).join("")}</ul>`;
 }
 function profile(organization, origin, mapTemplate = "") {
   const o = organization;
@@ -62,6 +63,7 @@ ${o.location ? `<a class="button button-secondary" href="/?organization=${encode
 <div class="profile-layout"><div class="profile-primary">
 <section class="profile-section"><h2>Functions</h2>${o.functions.length ? tags(o.functions) : '<p class="muted">Not yet recorded</p>'}</section>
 <section class="profile-section"><h2>Grains</h2>${o.grains.length ? tags(o.grains, true) : '<p class="muted">Not yet recorded</p>'}</section>
+${o.locations?`<section class="profile-section"><h2>Locations</h2><ul>${o.locations.filter(l=>l.operationalStatus!=='Closed').sort((a,b)=>a.name.localeCompare(b.name)).map(l=>`<li><a href="${route}?location=${encodeURIComponent(l.id)}">${escape(l.name)}</a><p>${escape(l.address||[l.city,l.state].filter(Boolean).join(', '))}</p></li>`).join('')}</ul></section>`:''}
 ${sourceLinks ? `<details class="profile-section profile-sources"><summary>Sources <span>${o.sources.length}</span>${icon("chevron-down")}</summary><ul>${sourceLinks}</ul></details>` : ""}</div>
 <aside class="profile-contact"><section class="profile-section"><h2>Contact &amp; location</h2>${contact || '<p class="muted">No contact details recorded</p>'}${mailing ? '<p class="location-note">Mailing address, not a visitor address.</p>' : ""}${mapNote ? `<p class="location-note">${escape(mapNote)}</p>` : ""}</section>
 <a class="correction-link" href="/add/?organization=${encodeURIComponent(o.id)}&amp;type=correction">${icon("message-square-plus")}Suggest an update</a></aside></div>
@@ -72,6 +74,7 @@ ${sourceLinks ? `<details class="profile-section profile-sources"><summary>Sourc
     mainEntityOfPage: new URL(route, origin).href,
     ...(o.address ? { address: o.address } : {}), ...(o.phone ? { telephone: o.phone } : {}),
     ...(o.email ? { email: o.email } : {}),
+    ...(o.locations?{location:o.locations.filter(l=>l.operationalStatus!=='Closed').map(l=>({'@type':'Place',name:l.name,address:l.address,...(l.location?.precision==='address'?{geo:{'@type':'GeoCoordinates',latitude:l.location.lat,longitude:l.location.lng}}:{})}))}:{}),
   };
   const html = page({ title: `${o.name}${locality ? ` | ${locality}` : ""} | Grain List`, description, route, content, origin, structured });
   if (!mapTemplate) return html;
@@ -127,6 +130,7 @@ function buildSite({ root = ROOT, output = path.join(root, "dist"), origin = DEF
   for (const o of payload.organizations) {
     if (!/^grain-[a-f0-9]{16}$/.test(o.id) || seen.has(o.id)) throw new Error("Invalid or duplicate public organization ID");
     if (Object.keys(o).some(key => !PUBLIC_FIELDS.has(key))) throw new Error("Non-public organization fields in publication data");
+    if(o.locations&&(!Array.isArray(o.locations)||o.locations.some(l=>Object.keys(l).some(k=>!LOCATION_FIELDS.has(k)))))throw new Error('Non-public location fields in publication data');
     seen.add(o.id);
   }
   if (!seen.size) throw new Error("Cannot build an empty directory");

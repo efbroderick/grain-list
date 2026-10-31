@@ -1,0 +1,10 @@
+const fs=require('node:fs');
+const path=require('node:path');
+const {buildAdmin}=require('./build_admin.cjs');
+const root=path.join(__dirname,'..');
+buildAdmin();
+const target=path.join(root,'.maintenance/admin-deployment');
+fs.mkdirSync(target,{recursive:true});
+fs.writeFileSync(path.join(target,'Code.gs'),['Code.gs','Locations.gs','Research.gs'].map(name=>fs.readFileSync(path.join(root,'admin/apps-script',name),'utf8')).join('\n\n'));
+for(const name of ['Domain.gs','Client.html','Index.html','Styles.html','Schema.html','appsscript.json'])fs.copyFileSync(path.join(root,'admin/apps-script',name),path.join(target,name));
+console.log('Private admin deployment bundle prepared in .maintenance/admin-deployment');
